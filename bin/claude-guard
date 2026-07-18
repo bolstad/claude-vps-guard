@@ -142,7 +142,9 @@ case "$cmd" in
             candidates_re "$CAND_RE"
         ;;
     -h|--help|help)
-        sed -n '2,20p' "$self" | sed 's/^# \{0,1\}//'
+        # The header doubles as the help text; print it up to the first line of
+        # code, so editing the header cannot spill code into the help output.
+        awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$self"
         ;;
     *)
         echo "usage: claude-guard {status|list|resume <pid|all>|kill <pid|all>|start|stop|restart|service|log [n]|config}" >&2
