@@ -8,10 +8,12 @@
 #   ccx           -> session "claude"
 #   ccx <name>    -> session <name>   (several names = several parallel sessions)
 #   ccx ls        -> list Claude sessions with memory per session
+#   ccx --help    -> this text
 #
 # Environment: CLAUDE_MEMORY_MAX (per-session cap, default 3G on Linux),
 #              CLAUDE_TMUX_SESSION (default session name).
-# ("ls" is reserved as a subcommand and cannot be used as a session name.)
+# ("ls" and --help are reserved and cannot be used as session names. A bare
+#  'help' is not reserved, so it still starts a session called "help".)
 set -u
 
 self="${BASH_SOURCE[0]}"
@@ -25,6 +27,16 @@ done
 GUARD_BIN_DIR="$(cd "$(dirname "$self")" && pwd)"
 # shellcheck source=../lib/common.sh
 . "$GUARD_BIN_DIR/../lib/common.sh"
+
+case "${1:-}" in
+    -h|--help)
+        # The header doubles as the help text. The command is renameable via
+        # CC_COMMAND_NAME, so print the name it was actually invoked under.
+        awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$self" \
+            | sed "s/ccx/$(basename "$0")/g"
+        exit 0
+        ;;
+esac
 
 SESSION="${1:-${CLAUDE_TMUX_SESSION:-claude}}"
 
