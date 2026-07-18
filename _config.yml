@@ -4,7 +4,9 @@
 # config examples) are rewritten by the jekyll-relative-links plugin, which
 # GitHub Pages enables by default.
 title: claude-vps-guard
-description: >-
-  Keeps a runaway Claude Code session from OOM-killing the machine it runs on:
-  per-session memory caps plus a watchdog. Linux and macOS.
+# Kept short and complementary: the README's opening paragraph directly below
+# it already states the problem, and the two sit stacked on the site even
+# though they never appear together on GitHub. The repository description on
+# GitHub is set separately and stays longer.
+description: Memory caps and a watchdog for long-running Claude Code sessions. Linux and macOS.
 theme: jekyll-theme-cayman
