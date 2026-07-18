@@ -2,6 +2,11 @@
 #
 # Sourced by every tool. Values here override the built-in defaults, and
 # environment variables override this file. All sizes are megabytes.
+#
+# The defaults are sized for a small VPS (a few GB of RAM). On a workstation
+# with more memory, scale the thresholds up accordingly - as a rule of thumb,
+# on a 32G machine: FLOOR_MB=2048, CRIT_MB=1024, PROC_HARD_MB=8192,
+# SWAP_FLOOR_MB=1024. The watchdog rereads this file on 'claude-guard restart'.
 
 # --- watchdog thresholds -----------------------------------------------------
 

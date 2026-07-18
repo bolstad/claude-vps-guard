@@ -106,6 +106,10 @@ See [`config/guard.conf.example`](config/guard.conf.example) for the annotated d
 | `DRY_RUN` | `0` | `1` logs intended actions without pausing or notifying. |
 | `CAND_RE` | see example | Command names eligible for pausing. |
 
+The defaults are sized for a small VPS. On a machine with more RAM, scale the thresholds up -
+on a 32G workstation something like `FLOOR_MB=2048`, `CRIT_MB=1024`, `PROC_HARD_MB=8192`,
+`SWAP_FLOOR_MB=1024`. `claude-guard restart` picks up the new values.
+
 Tune on a quiet machine with `DRY_RUN=1` first:
 
 ```sh
