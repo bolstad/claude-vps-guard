@@ -35,7 +35,7 @@ pauses itself.
 ## Install
 
 ```sh
-git clone https://github.com/<owner>/claude-vps-guard.git
+git clone https://github.com/bolstad/claude-vps-guard.git
 cd claude-vps-guard
 ./install.sh
 ```
