@@ -55,7 +55,7 @@ GUARD_USER="${GUARD_USER:-$(id -un)}"
 
 # Which processes may be paused. Infrastructure (sshd, tmux, bash, the watchdog
 # itself) deliberately does not match, so it can never be frozen.
-CAND_RE="${CAND_RE:-^(claude|node|python|python3|chromium|chrome|headless_shell|playwright)$}"
+CAND_RE="${CAND_RE:-^(claude|node|python|python3|Python|chromium|chrome|headless_shell|playwright)$}"
 
 # --- platform ----------------------------------------------------------------
 
@@ -115,15 +115,18 @@ swap_free_mb() {
 }
 
 # "pid rss_mb stat comm args..." for every process owned by GUARD_USER.
-# macOS reports comm as an absolute path, so strip the directory to keep
-# CAND_RE identical across platforms.
+# comm is derived from argv[0] rather than the ps comm column: with args= in
+# the same invocation, macOS truncates comm to a fixed width, so a long
+# interpreter path like /opt/homebrew/Cellar/python@3.12/... comes back as
+# "/opt/homebrew/Ce" and the process would escape CAND_RE. argv[0] is not
+# truncated; strip its directory to keep CAND_RE identical across platforms.
 guard_ps() {
-    ps -u "$GUARD_USER" -o pid=,rss=,stat=,comm=,args= 2>/dev/null | awk '
+    ps -u "$GUARD_USER" -o pid=,rss=,stat=,args= 2>/dev/null | awk '
         {
             n = split($4, parts, "/")
             comm = parts[n]
             args = ""
-            for (i = 5; i <= NF; i++) args = args (i > 5 ? " " : "") $i
+            for (i = 4; i <= NF; i++) args = args (i > 4 ? " " : "") $i
             printf "%s %d %s %s %s\n", $1, int($2/1024), $3, comm, args
         }'
 }

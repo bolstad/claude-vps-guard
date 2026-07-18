@@ -28,7 +28,7 @@ DRY_RUN=0
 
 # Which processes may be paused, matched against the command name. Anything not
 # listed here (sshd, tmux, bash, the watchdog itself) can never be frozen.
-CAND_RE='^(claude|node|python|python3|chromium|chrome|headless_shell|playwright)$'
+CAND_RE='^(claude|node|python|python3|Python|chromium|chrome|headless_shell|playwright)$'
 
 # --- sessions ----------------------------------------------------------------
 
