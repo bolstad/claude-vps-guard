@@ -7,7 +7,7 @@ set -euo pipefail
 
 PREFIX="${PREFIX:-$HOME/.local/share/claude-vps-guard}"
 BINDIR="${BINDIR:-$HOME/.local/bin}"
-CC_COMMAND_NAME="${CC_COMMAND_NAME:-cc}"
+CC_COMMAND_NAME="${CC_COMMAND_NAME:-ccx}"
 CONFIG_DIR="${CLAUDE_GUARD_CONFIG_DIR:-$HOME/.config/claude-vps-guard}"
 STATE_DIR="${CLAUDE_GUARD_STATE_DIR:-$HOME/.cache/claude-vps-guard}"
 
@@ -47,8 +47,10 @@ case "$(uname -s)" in
         ;;
 esac
 
-# Only remove links that point into this installation.
-for link in "$BINDIR/$CC_COMMAND_NAME" "$BINDIR/claude-guard"; do
+# Only remove links that point into this installation. 'cc' and 'ccx' are both
+# swept so an installation made under the other default is cleaned up too; the
+# readlink check keeps unrelated commands of the same name safe.
+for link in "$BINDIR/$CC_COMMAND_NAME" "$BINDIR/cc" "$BINDIR/ccx" "$BINDIR/claude-guard"; do
     [ -L "$link" ] || continue
     case "$(readlink "$link")" in
         "$PREFIX"/*) rm -f "$link" ;;

@@ -15,8 +15,8 @@ Works on Linux and macOS. Bash 3.2 compatible, so the stock macOS shell is enoug
 
 | Command | Purpose |
 | --- | --- |
-| `cc` | Start or reattach to a named tmux session running Claude Code, memory capped where the platform allows it. |
-| `cc ls` | List Claude sessions with memory used per session. |
+| `ccx` | Start or reattach to a named tmux session running Claude Code, memory capped where the platform allows it. |
+| `ccx ls` | List Claude sessions with memory used per session. |
 | `claude-guard` | Inspect the watchdog, see and release paused processes, control the service. |
 
 Two layers of protection:
@@ -40,7 +40,7 @@ cd claude-vps-guard
 ./install.sh
 ```
 
-The installer copies the tools to `~/.local/share/claude-vps-guard`, links `cc` and
+The installer copies the tools to `~/.local/share/claude-vps-guard`, links `ccx` and
 `claude-guard` into `~/.local/bin`, writes a default config to
 `~/.config/claude-vps-guard/guard.conf`, and registers the watchdog with systemd (Linux) or
 launchd (macOS).
@@ -53,13 +53,14 @@ Useful variables:
 ```sh
 PREFIX=/opt/claude-vps-guard ./install.sh    # install elsewhere
 BINDIR=~/bin ./install.sh                    # link the commands elsewhere
-CC_COMMAND_NAME=ccx ./install.sh             # avoid clashing with the C compiler
+CC_COMMAND_NAME=cc ./install.sh              # shorter name, clashes with the C compiler
 NO_SERVICE=1 ./install.sh                    # files only, no watchdog service
 ```
 
-`cc` shares its name with the traditional C compiler. If `~/.local/bin` precedes `/usr/bin` on
-your `PATH`, builds that invoke `cc` would reach this tool instead. The installer warns when it
-detects the clash; `CC_COMMAND_NAME` picks another name.
+The session command is deliberately named `ccx` rather than the shorter `cc`, which is the
+traditional name of the C compiler: if `~/.local/bin` precedes `/usr/bin` on your `PATH`, builds
+that invoke `cc` would reach this tool instead. `CC_COMMAND_NAME=cc` opts into the short name
+anyway; the installer warns when the chosen name already resolves to something else.
 
 On Linux, enable lingering so the watchdog keeps running when no one is logged in:
 
@@ -72,9 +73,9 @@ Remove everything with `./uninstall.sh` (`PURGE=1` also drops config and logs).
 ## Use
 
 ```sh
-cc                 # session "claude"
-cc review          # a second, parallel session named "review"
-cc ls              # sessions with memory per session
+ccx                # session "claude"
+ccx review         # a second, parallel session named "review"
+ccx ls             # sessions with memory per session
 
 claude-guard              # memory, candidates, paused processes
 claude-guard list         # paused processes only
@@ -86,7 +87,7 @@ claude-guard config       # effective settings and paths
 claude-guard restart      # restart the watchdog service
 ```
 
-Detach from a session with `Ctrl-b d`; `cc <name>` reattaches. A `claude -p` run from cron is
+Detach from a session with `Ctrl-b d`; `ccx <name>` reattaches. A `claude -p` run from cron is
 untouched by any of this.
 
 ## Configuration

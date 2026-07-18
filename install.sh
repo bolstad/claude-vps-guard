@@ -8,14 +8,14 @@
 # Environment:
 #   PREFIX           install location (default ~/.local/share/claude-vps-guard)
 #   BINDIR           where the commands are linked (default ~/.local/bin)
-#   CC_COMMAND_NAME  name of the session command (default cc)
+#   CC_COMMAND_NAME  name of the session command (default ccx)
 #   NO_SERVICE=1     install files only, skip the service registration
 set -euo pipefail
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PREFIX="${PREFIX:-$HOME/.local/share/claude-vps-guard}"
 BINDIR="${BINDIR:-$HOME/.local/bin}"
-CC_COMMAND_NAME="${CC_COMMAND_NAME:-cc}"
+CC_COMMAND_NAME="${CC_COMMAND_NAME:-ccx}"
 CONFIG_DIR="${CLAUDE_GUARD_CONFIG_DIR:-$HOME/.config/claude-vps-guard}"
 STATE_DIR="${CLAUDE_GUARD_STATE_DIR:-$HOME/.cache/claude-vps-guard}"
 LOG_DIR="${CLAUDE_GUARD_LOG_DIR:-$STATE_DIR/logs}"
@@ -37,9 +37,10 @@ cp -R "$SRC/bin" "$SRC/lib" "$PREFIX/"
 chmod +x "$PREFIX"/bin/* "$PREFIX/lib/notify-mail.py"
 say "installed to $PREFIX"
 
-# 'cc' is also the traditional name of the C compiler. Shadowing it in a
-# directory that precedes /usr/bin on PATH would redirect builds to tmux, so
-# say so plainly and let CC_COMMAND_NAME pick another name.
+# The default is 'ccx' rather than the shorter 'cc', because 'cc' is the
+# traditional name of the C compiler: shadowing it in a directory that precedes
+# /usr/bin on PATH would redirect builds to tmux. CC_COMMAND_NAME=cc opts into
+# the short name anyway; warn whenever the chosen name resolves elsewhere.
 existing_cc="$(command -v "$CC_COMMAND_NAME" 2>/dev/null || true)"
 if [ -n "$existing_cc" ] && [ "$existing_cc" != "$BINDIR/$CC_COMMAND_NAME" ]; then
     warn "'$CC_COMMAND_NAME' already resolves to $existing_cc"
@@ -47,7 +48,7 @@ if [ -n "$existing_cc" ] && [ "$existing_cc" != "$BINDIR/$CC_COMMAND_NAME" ]; th
     warn "re-run with CC_COMMAND_NAME=<other-name> to avoid the clash"
 fi
 
-ln -sf "$PREFIX/bin/cc" "$BINDIR/$CC_COMMAND_NAME"
+ln -sf "$PREFIX/bin/ccx" "$BINDIR/$CC_COMMAND_NAME"
 ln -sf "$PREFIX/bin/claude-guard" "$BINDIR/claude-guard"
 say "linked $CC_COMMAND_NAME and claude-guard into $BINDIR"
 

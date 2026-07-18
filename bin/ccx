@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# cc - start or reattach to a named tmux session running Claude Code.
+# ccx - start or reattach to a named tmux session running Claude Code.
 #
-# Use 'cc' instead of 'claude' for sessions that survive a dropped connection
+# Use 'ccx' instead of 'claude' for sessions that survive a dropped connection
 # and that are memory capped where the platform supports it. A 'claude -p' run
 # from cron is unaffected.
 #
-#   cc            -> session "claude"
-#   cc <name>     -> session <name>   (several names = several parallel sessions)
-#   cc ls         -> list Claude sessions with memory per session
+#   ccx           -> session "claude"
+#   ccx <name>    -> session <name>   (several names = several parallel sessions)
+#   ccx ls        -> list Claude sessions with memory per session
 #
 # Environment: CLAUDE_MEMORY_MAX (per-session cap, default 3G on Linux),
 #              CLAUDE_TMUX_SESSION (default session name).

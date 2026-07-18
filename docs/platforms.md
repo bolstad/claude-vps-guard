@@ -31,7 +31,7 @@ single process can actually claim at once.
 Swap: `/proc/meminfo` on Linux, `sysctl vm.swapusage` on macOS. macOS swap grows dynamically, so
 `SWAP_FLOOR_MB` triggers later there than on a VPS with a fixed swap partition.
 
-## Per-session memory in `cc ls`
+## Per-session memory in `ccx ls`
 
 On Linux a capped session has its own systemd scope, and the cgroup's `memory.current` is exact,
 including every child process. Everywhere else the resident memory of the pane's process tree is
