@@ -1,0 +1,16 @@
+[Unit]
+Description=Claude memory watchdog - pauses runaway Claude processes and sends an alert
+After=default.target
+
+[Service]
+Type=simple
+ExecStart=@BIN@/claude-memwatch
+Restart=always
+RestartSec=5
+# Cap the watchdog's own footprint (bash + ps is a few MB); it must never be
+# the process that exhausts memory.
+MemoryMax=128M
+MemorySwapMax=0
+
+[Install]
+WantedBy=default.target

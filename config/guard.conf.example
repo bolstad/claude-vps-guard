@@ -1,0 +1,48 @@
+# claude-vps-guard configuration - installed to ~/.config/claude-vps-guard/guard.conf
+#
+# Sourced by every tool. Values here override the built-in defaults, and
+# environment variables override this file. All sizes are megabytes.
+
+# --- watchdog thresholds -----------------------------------------------------
+
+# Seconds between checks.
+INTERVAL=10
+
+# Pause the largest candidate when available memory drops below this.
+FLOOR_MB=900
+
+# Emergency: pause up to the three largest candidates at once.
+CRIT_MB=450
+
+# Pause any single process above this, no matter how much memory is free.
+PROC_HARD_MB=2800
+
+# When swap exists, treat little free swap as pressure too.
+SWAP_FLOOR_MB=400
+
+# Minimum seconds between notifications. Pauses are always logged.
+NOTIFY_COOLDOWN=60
+
+# 1 = log intended actions without pausing or notifying. Useful for tuning.
+DRY_RUN=0
+
+# Which processes may be paused, matched against the command name. Anything not
+# listed here (sshd, tmux, bash, the watchdog itself) can never be frozen.
+CAND_RE='^(claude|node|python|python3|chromium|chrome|headless_shell|playwright)$'
+
+# --- sessions ----------------------------------------------------------------
+
+# Per-session memory cap, enforced by the kernel on Linux. Ignored on macOS.
+CLAUDE_MEMORY_MAX=3G
+
+# The Claude Code executable, if it is not simply 'claude' on PATH.
+# CLAUDE_BIN=claude
+
+# --- notifications -----------------------------------------------------------
+
+# Command receiving the subject as its argument and the body on stdin. Leave it
+# unset to use the bundled SMTP sender (configured in mail.env).
+# Examples:
+#   NOTIFY_CMD='/usr/local/bin/terminal-notifier -title'
+#   NOTIFY_CMD="$HOME/bin/webhook-alert.sh"
+# NOTIFY_CMD=

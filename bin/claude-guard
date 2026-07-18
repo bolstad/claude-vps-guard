@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+# claude-guard - inspect the watchdog and the processes it has paused.
+#
+#   status                  memory, candidates and paused processes (default)
+#   list                    paused processes only
+#   resume <pid|all>        SIGCONT and drop the marker
+#   kill   <pid|all>        SIGKILL and drop the marker
+#   start | stop | restart  control the watchdog service
+#   service                 service state as reported by the platform
+#   log [n]                 last n lines of the watchdog log (default 40)
+#   config                  effective configuration and paths
+set -uo pipefail
+
+self="${BASH_SOURCE[0]}"
+while [ -L "$self" ]; do
+    target="$(readlink "$self")"
+    case "$target" in
+        /*) self="$target" ;;
+        *)  self="$(dirname "$self")/$target" ;;
+    esac
+done
+GUARD_BIN_DIR="$(cd "$(dirname "$self")" && pwd)"
+# shellcheck source=../lib/common.sh
+. "$GUARD_BIN_DIR/../lib/common.sh"
+
+SERVICE_LABEL="claude-memwatch"
+LAUNCHD_LABEL="io.github.claude-vps-guard.memwatch"
+
+cmd="${1:-status}"
+arg="${2:-}"
+
+list_paused() {
+    local any=0 marker pid state
+    for marker in "$GUARD_PAUSED_DIR"/*; do
+        [ -e "$marker" ] || continue
+        any=1
+        pid="$(basename "$marker")"
+        if pid_alive "$pid"; then
+            state="$(ps -o stat= -p "$pid" | tr -d ' ')"
+        else
+            state="(gone)"
+        fi
+        printf '  %-7s stat=%-6s %s\n' "$pid" "$state" "$(cat "$marker")"
+    done
+    [ "$any" -eq 0 ] && echo "  (no paused processes)"
+    return 0
+}
+
+service_action() {
+    case "$GUARD_OS" in
+        linux)
+            command -v systemctl >/dev/null 2>&1 || { echo "systemctl not found" >&2; exit 1; }
+            case "$1" in
+                start)   systemctl --user start "$SERVICE_LABEL.service" ;;
+                stop)    systemctl --user stop "$SERVICE_LABEL.service" ;;
+                restart) systemctl --user restart "$SERVICE_LABEL.service" ;;
+                status)  systemctl --user status --no-pager "$SERVICE_LABEL.service" ;;
+            esac
+            ;;
+        macos)
+            local domain="gui/$(id -u)"
+            local plist="$HOME/Library/LaunchAgents/$LAUNCHD_LABEL.plist"
+            case "$1" in
+                start)   launchctl bootstrap "$domain" "$plist" 2>/dev/null || launchctl kickstart "$domain/$LAUNCHD_LABEL" ;;
+                stop)    launchctl bootout "$domain/$LAUNCHD_LABEL" ;;
+                restart) launchctl kickstart -k "$domain/$LAUNCHD_LABEL" ;;
+                status)  launchctl print "$domain/$LAUNCHD_LABEL" 2>/dev/null | head -20 \
+                             || echo "watchdog is not loaded (run install.sh)" ;;
+            esac
+            ;;
+        *)
+            echo "unsupported platform: $(uname -s)" >&2
+            exit 1
+            ;;
+    esac
+}
+
+case "$cmd" in
+    list)
+        list_paused
+        ;;
+    status)
+        echo "MemAvailable: $(mem_available_mb) MB (floor $FLOOR_MB, crit $CRIT_MB)"
+        echo "Candidates (user workloads, RSS MB, largest first):"
+        guard_ps | awk -v re="$CAND_RE" '$4 ~ re { printf "  %-7s %-7d %-6s %s\n", $1, $2, $3, $4 }' \
+            | sort -k2 -nr | head -20
+        echo "Paused:"
+        list_paused
+        ;;
+    resume|kill)
+        sig=CONT
+        [ "$cmd" = kill ] && sig=KILL
+        targets=""
+        if [ "$arg" = all ]; then
+            for marker in "$GUARD_PAUSED_DIR"/*; do
+                [ -e "$marker" ] || continue
+                targets="$targets $(basename "$marker")"
+            done
+        elif [ -n "$arg" ]; then
+            targets="$arg"
+        else
+            echo "usage: claude-guard $cmd <pid|all>" >&2
+            exit 2
+        fi
+        if [ -z "${targets// /}" ]; then
+            echo "(nothing paused to $cmd)"
+            exit 0
+        fi
+        for pid in $targets; do
+            if kill -"$sig" "$pid" 2>/dev/null; then
+                echo "$cmd pid=$pid OK"
+            else
+                echo "$cmd pid=$pid failed (gone?)"
+            fi
+            rm -f "$GUARD_PAUSED_DIR/$pid"
+        done
+        ;;
+    start|stop|restart)
+        service_action "$cmd"
+        ;;
+    service)
+        service_action status
+        ;;
+    log)
+        lines="${arg:-40}"
+        [ -f "$GUARD_LOG" ] || { echo "no log yet: $GUARD_LOG"; exit 0; }
+        tail -n "$lines" "$GUARD_LOG"
+        ;;
+    config)
+        printf '%-16s %s\n' \
+            os "$GUARD_OS" \
+            config "$GUARD_CONFIG" \
+            state "$GUARD_STATE_DIR" \
+            log "$GUARD_LOG" \
+            interval "${INTERVAL}s" \
+            floor_mb "$FLOOR_MB" \
+            crit_mb "$CRIT_MB" \
+            proc_hard_mb "$PROC_HARD_MB" \
+            swap_floor_mb "$SWAP_FLOOR_MB" \
+            memory_max "$CLAUDE_MEMORY_MAX" \
+            notify_cmd "${NOTIFY_CMD:-(bundled SMTP sender)}" \
+            candidates_re "$CAND_RE"
+        ;;
+    -h|--help|help)
+        sed -n '2,20p' "$self" | sed 's/^# \{0,1\}//'
+        ;;
+    *)
+        echo "usage: claude-guard {status|list|resume <pid|all>|kill <pid|all>|start|stop|restart|service|log [n]|config}" >&2
+        exit 2
+        ;;
+esac

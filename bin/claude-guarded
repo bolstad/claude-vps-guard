@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# claude-guarded - start Claude Code inside a kernel-enforced memory cap.
+#
+# On Linux the session runs in its own systemd scope, so a runaway session is
+# OOM killed INSIDE its own cgroup instead of eating the host's RAM and taking
+# the machine down. Other sessions and the host survive.
+#
+# macOS has no per-process equivalent of cgroup memory limits, so the session
+# starts uncapped and the watchdog (claude-memwatch) is the only line of
+# defence there. See docs/platforms.md.
+#
+# Adjust the cap per session with CLAUDE_MEMORY_MAX (default 3G).
+set -u
+
+self="${BASH_SOURCE[0]}"
+while [ -L "$self" ]; do
+    target="$(readlink "$self")"
+    case "$target" in
+        /*) self="$target" ;;
+        *)  self="$(dirname "$self")/$target" ;;
+    esac
+done
+GUARD_BIN_DIR="$(cd "$(dirname "$self")" && pwd)"
+# shellcheck source=../lib/common.sh
+. "$GUARD_BIN_DIR/../lib/common.sh"
+
+if [ "$GUARD_OS" = linux ] && command -v systemd-run >/dev/null 2>&1; then
+    # MemorySwapMax=0 keeps a capped session from pushing the host into swap
+    # thrash instead of hitting its own limit.
+    exec systemd-run --user --scope --quiet \
+        -p MemoryMax="$CLAUDE_MEMORY_MAX" -p MemorySwapMax=0 \
+        "$CLAUDE_BIN" "$@"
+fi
+
+exec "$CLAUDE_BIN" "$@"

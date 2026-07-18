@@ -1,0 +1,5 @@
+# Local secrets and state must never be committed.
+config/mail.env
+config/guard.conf
+*.log
+.DS_Store

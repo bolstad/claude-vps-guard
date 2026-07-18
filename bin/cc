@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# cc - start or reattach to a named tmux session running Claude Code.
+#
+# Use 'cc' instead of 'claude' for sessions that survive a dropped connection
+# and that are memory capped where the platform supports it. A 'claude -p' run
+# from cron is unaffected.
+#
+#   cc            -> session "claude"
+#   cc <name>     -> session <name>   (several names = several parallel sessions)
+#   cc ls         -> list Claude sessions with memory per session
+#
+# Environment: CLAUDE_MEMORY_MAX (per-session cap, default 3G on Linux),
+#              CLAUDE_TMUX_SESSION (default session name).
+# ("ls" is reserved as a subcommand and cannot be used as a session name.)
+set -u
+
+self="${BASH_SOURCE[0]}"
+while [ -L "$self" ]; do
+    target="$(readlink "$self")"
+    case "$target" in
+        /*) self="$target" ;;
+        *)  self="$(dirname "$self")/$target" ;;
+    esac
+done
+GUARD_BIN_DIR="$(cd "$(dirname "$self")" && pwd)"
+# shellcheck source=../lib/common.sh
+. "$GUARD_BIN_DIR/../lib/common.sh"
+
+SESSION="${1:-${CLAUDE_TMUX_SESSION:-claude}}"
+
+# Memory used by one tmux session. On Linux a capped session lives in its own
+# systemd scope, whose cgroup accounting is exact; everywhere else the process
+# tree below each pane is summed instead.
+session_memory_mb() {
+    local name="$1" total=0 pane cgroup current seen=""
+    while read -r pane; do
+        [ -n "$pane" ] || continue
+        cgroup=""
+        if [ "$GUARD_OS" = linux ] && [ -r "/proc/$pane/cgroup" ]; then
+            cgroup="$(sed -n 's/^0:://p' "/proc/$pane/cgroup" 2>/dev/null)"
+        fi
+        case "$cgroup" in
+            */run-*.scope)
+                # Panes can share a scope; count each scope once.
+                case " $seen " in *" $cgroup "*) continue ;; esac
+                seen="$seen $cgroup"
+                current="$(cat "/sys/fs/cgroup${cgroup}/memory.current" 2>/dev/null || echo 0)"
+                total=$(( total + current ))
+                ;;
+            *)
+                total=$(( total + $(rss_tree_kb "$pane") * 1024 ))
+                ;;
+        esac
+    done < <(tmux list-panes -s -t "$name" -F '#{pane_pid}' 2>/dev/null)
+    echo $(( total / 1024 / 1024 ))
+}
+
+if [ "$SESSION" = "ls" ]; then
+    command -v tmux >/dev/null 2>&1 || { echo "tmux is not installed" >&2; exit 1; }
+    if ! tmux ls >/dev/null 2>&1; then echo "(no tmux sessions)"; exit 0; fi
+    printf '%-24s %-9s %-8s %s\n' SESSION MEMORY WINDOWS CREATED
+    tmux list-sessions -F '#{session_name}|#{session_windows}|#{t:session_created}' 2>/dev/null \
+    | while IFS='|' read -r name windows created; do
+        printf '%-24s %-9s %-8s %s\n' "$name" "$(session_memory_mb "$name") MB" "$windows" "$created"
+    done
+    exit 0
+fi
+
+command -v tmux >/dev/null 2>&1 || { echo "tmux is not installed" >&2; exit 1; }
+
+if tmux has-session -t "$SESSION" 2>/dev/null; then
+    exec tmux attach -t "$SESSION"
+fi
+exec tmux new-session -s "$SESSION" "exec '$GUARD_BIN_DIR/claude-guarded'"

@@ -1,0 +1,203 @@
+#!/usr/bin/env bash
+# claude-memwatch - pause runaway Claude processes before the machine OOMs.
+#
+# Runs as a user service (systemd on Linux, launchd on macOS) and checks memory
+# every INTERVAL seconds. SIGSTOP freezes the offender, which is reversible via
+# 'claude-guard resume'. Freezing does not free RAM, but it stops the GROWTH,
+# so a runaway never reaches the point where the kernel starts killing things.
+#
+# Scope: every process owned by the user that matches CAND_RE, interactive
+# sessions included. Infrastructure (systemd, sshd, ssh-agent, bash, tmux) does
+# not match the whitelist and can never be paused; the watchdog never pauses
+# itself.
+set -uo pipefail
+
+self="${BASH_SOURCE[0]}"
+while [ -L "$self" ]; do
+    target="$(readlink "$self")"
+    case "$target" in
+        /*) self="$target" ;;
+        *)  self="$(dirname "$self")/$target" ;;
+    esac
+done
+GUARD_BIN_DIR="$(cd "$(dirname "$self")" && pwd)"
+# shellcheck source=../lib/common.sh
+. "$GUARD_BIN_DIR/../lib/common.sh"
+
+NOTIFY_STAMP="$GUARD_STATE_DIR/last_notify"
+KEEP_LOG_BYTES="${KEEP_LOG_BYTES:-$(( 5 * 1024 * 1024 ))}"
+SELF_PID=$$
+
+mkdir -p "$GUARD_PAUSED_DIR" "$GUARD_LOG_DIR"
+
+log() { printf '[%s] %s\n' "$(date '+%F %T')" "$*" >>"$GUARD_LOG"; }
+
+rotate_log() {
+    local size
+    size="$(file_size_bytes "$GUARD_LOG")"
+    [ -n "$size" ] && [ "$size" -gt "$KEEP_LOG_BYTES" ] && mv -f "$GUARD_LOG" "$GUARD_LOG.1" 2>/dev/null
+    return 0
+}
+
+# "pid rss_mb comm args..." per pausable candidate, largest RSS first.
+candidates() {
+    guard_ps | awk -v self="$SELF_PID" -v re="$CAND_RE" '
+        {
+            pid = $1; rss = $2; stat = $3; comm = $4
+            args = ""
+            for (i = 5; i <= NF; i++) args = args (i > 5 ? " " : "") $i
+            if (pid == self) next
+            if (stat ~ /^[Tt]/) next    # already stopped
+            if (comm !~ re) next        # whitelisted workloads only
+            printf "%s %s %s %s\n", pid, rss, comm, args
+        }' | sort -k2 -nr
+}
+
+# pause_pid pid rss reason cmd...  ->  echoes "pid rss reason cmd..." when paused
+pause_pid() {
+    local pid="$1" rss="$2" reason="$3"
+    shift 3
+    local cmd="$*"
+    [ -f "$GUARD_PAUSED_DIR/$pid" ] && return 1
+    if [ "$DRY_RUN" = "1" ]; then
+        log "DRY_RUN: would pause pid=$pid rss=${rss}MB reason=$reason cmd=$cmd"
+        echo "$pid $rss $reason $cmd"
+        return 0
+    fi
+    if kill -STOP "$pid" 2>/dev/null; then
+        printf 'time=%s rss_mb=%s reason=%s cmd=%s\n' "$(date '+%F %T')" "$rss" "$reason" "$cmd" \
+            >"$GUARD_PAUSED_DIR/$pid"
+        log "PAUSED pid=$pid rss=${rss}MB reason=$reason cmd=$cmd"
+        echo "$pid $rss $reason $cmd"
+        return 0
+    fi
+    log "FAILED to pause pid=$pid (gone?)"
+    return 1
+}
+
+# send_alert avail swapfree "pid rss reason cmd..." ...
+send_alert() {
+    local avail="$1" swapfree="$2"
+    shift 2
+    local count="$#" host now last rc line pid rss reason cmd
+    host="$(hostname)"
+    now="$(date +%s)"
+    if [ "$DRY_RUN" = "1" ]; then
+        log "DRY_RUN: would send alert ($count paused)"
+        return 0
+    fi
+    last="$(cat "$NOTIFY_STAMP" 2>/dev/null || echo 0)"
+    if [ $(( now - last )) -lt "$NOTIFY_COOLDOWN" ]; then
+        log "notification cooldown active - skipping alert ($count paused, already logged)"
+        return 0
+    fi
+    {
+        echo "Host        : $host"
+        echo "Time        : $(date '+%F %T %Z')"
+        echo "MemAvailable: ${avail} MB (floor ${FLOOR_MB})   SwapFree: ${swapfree} MB (floor ${SWAP_FLOOR_MB})"
+        echo
+        echo "Paused Claude processes (SIGSTOP - frozen, NOT killed):"
+        printf '  %-7s %-7s %-26s %s\n' PID RSS_MB REASON COMMAND
+        for line in "$@"; do
+            # shellcheck disable=SC2086
+            set -- $line
+            pid="$1"; rss="$2"; reason="$3"; shift 3; cmd="$*"
+            printf '  %-7s %-7s %-26s %s\n' "$pid" "$rss" "$reason" "$(echo "$cmd" | cut -c1-80)"
+        done
+        echo
+        echo "Next steps:"
+        echo "  List:   claude-guard list"
+        echo "  Resume: claude-guard resume <pid|all>"
+        echo "  Kill:   claude-guard kill <pid|all>"
+        echo
+        echo "Note: SIGSTOP does not free RAM. If memory is still critically low, kill the offender."
+    } | guard_notify "[claude-guard] $host: paused $count runaway process(es)" 2>>"$GUARD_LOG"
+    rc=$?
+    if [ "$rc" -eq 0 ]; then
+        echo "$now" >"$NOTIFY_STAMP"
+        log "alert sent (rc=0, $count process(es))"
+    elif [ "$rc" -eq 3 ]; then
+        log "notification not configured (rc=3) - alert only in the log"
+    else
+        log "notification failed rc=$rc"
+    fi
+}
+
+log "=== START claude-memwatch (os=$GUARD_OS interval=${INTERVAL}s floor=${FLOOR_MB} crit=${CRIT_MB} swapfloor=${SWAP_FLOOR_MB} hard=${PROC_HARD_MB} dry=${DRY_RUN}) ==="
+
+TICK=0
+while true; do
+    rotate_log
+    avail="$(mem_available_mb)"
+    swaptotal="$(swap_total_mb)"
+    swapfree="$(swap_free_mb)"
+    : "${swaptotal:=0}" "${swapfree:=0}"
+
+    # Drop markers for processes that died or were resumed elsewhere.
+    for marker in "$GUARD_PAUSED_DIR"/*; do
+        [ -e "$marker" ] || continue
+        p="$(basename "$marker")"
+        if ! pid_alive "$p"; then
+            rm -f "$marker"; log "marker cleared pid=$p (gone)"; continue
+        fi
+        if ! pid_stopped "$p"; then
+            rm -f "$marker"; log "marker cleared pid=$p (resumed)"
+        fi
+    done
+
+    cands="$(candidates)"
+    batch=()
+    handled=" "
+
+    # Rule 1: a single process above the hard ceiling, regardless of free memory.
+    while read -r line; do
+        [ -z "$line" ] && continue
+        # shellcheck disable=SC2086
+        set -- $line
+        pid="$1"; rss="$2"; comm="$3"; shift 3; cmd="$comm $*"
+        if [ "$rss" -gt "$PROC_HARD_MB" ]; then
+            out="$(pause_pid "$pid" "$rss" "proc>${PROC_HARD_MB}MB" "$cmd")" && [ -n "$out" ] && {
+                batch[${#batch[@]}]="$out"
+                handled="$handled$pid "
+            }
+        fi
+    done <<<"$cands"
+
+    # Rules 2 and 3: memory pressure - RAM floor, plus swap floor when swap exists.
+    press=""
+    if [ "$avail" -lt "$CRIT_MB" ]; then
+        press=crit
+    elif [ "$avail" -lt "$FLOOR_MB" ]; then
+        press=low
+    elif [ "$swaptotal" -gt 0 ] && [ "$swapfree" -lt "$SWAP_FLOOR_MB" ]; then
+        press=low
+    fi
+    memtag="avail=${avail},swapfree=${swapfree}"
+
+    if [ -n "$press" ]; then
+        # crit pauses up to three of the largest at once, low pauses only the largest.
+        limit=1
+        [ "$press" = crit ] && limit=3
+        n=0
+        while read -r line; do
+            [ -z "$line" ] && continue
+            [ "$n" -ge "$limit" ] && break
+            # shellcheck disable=SC2086
+            set -- $line
+            pid="$1"; rss="$2"; comm="$3"; shift 3; cmd="$comm $*"
+            case "$handled" in *" $pid "*) continue ;; esac
+            [ -f "$GUARD_PAUSED_DIR/$pid" ] && continue
+            out="$(pause_pid "$pid" "$rss" "${press}-mem(${memtag})" "$cmd")" && [ -n "$out" ] && {
+                batch[${#batch[@]}]="$out"
+                handled="$handled$pid "
+                n=$(( n + 1 ))
+            }
+        done <<<"$cands"
+    fi
+
+    [ "${#batch[@]}" -gt 0 ] && send_alert "$avail" "$swapfree" "${batch[@]}"
+
+    TICK=$(( TICK + 1 ))
+    if [ "$MAX_TICKS" -gt 0 ] && [ "$TICK" -ge "$MAX_TICKS" ]; then break; fi
+    sleep "$INTERVAL"
+done
