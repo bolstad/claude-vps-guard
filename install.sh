@@ -88,7 +88,11 @@ if [ "$OS" = linux ]; then
     mkdir -p "$unit_dir"
     sed "s|@BIN@|$PREFIX/bin|g" "$SRC/service/claude-memwatch.service.in" >"$unit_dir/claude-memwatch.service"
     systemctl --user daemon-reload
-    systemctl --user enable --now claude-memwatch.service
+    systemctl --user enable claude-memwatch.service
+    # restart, not 'enable --now': --now does nothing when the service is
+    # already running, so reinstalling over an older version would leave the
+    # previous code in memory with a unit file that claims otherwise.
+    systemctl --user restart claude-memwatch.service
     say "watchdog enabled: systemctl --user status claude-memwatch"
     # Without lingering, a user service stops when the last session logs out -
     # which is exactly when an unattended VPS still needs the watchdog.
