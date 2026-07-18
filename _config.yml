@@ -1,0 +1,10 @@
+# GitHub Pages configuration. The site is the README: Pages renders README.md
+# as the index when no index.md exists, so there is no second copy of the docs
+# to keep in sync. The relative links in the README (docs/platforms.md and the
+# config examples) are rewritten by the jekyll-relative-links plugin, which
+# GitHub Pages enables by default.
+title: claude-vps-guard
+description: >-
+  Keeps a runaway Claude Code session from OOM-killing the machine it runs on:
+  per-session memory caps plus a watchdog. Linux and macOS.
+theme: jekyll-theme-cayman
