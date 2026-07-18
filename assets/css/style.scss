@@ -1,0 +1,13 @@
+---
+# Front matter is required for Jekyll to process this file.
+---
+
+@import "{{ site.theme }}";
+
+// The page header already shows the project name, so the README's own H1
+// repeats it on the site. Hide that first heading here rather than deleting it
+// from README.md, where it still titles the document on GitHub and anywhere
+// else the file is read on its own.
+.main-content > h1:first-child {
+  display: none;
+}
