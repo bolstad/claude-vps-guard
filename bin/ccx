@@ -130,4 +130,19 @@ command -v tmux >/dev/null 2>&1 || { echo "tmux is not installed" >&2; exit 1; }
 if tmux has-session -t "$SESSION" 2>/dev/null; then
     exec tmux attach -t "$SESSION"
 fi
+
+# A new session does not inherit this shell's environment: it starts from the
+# tmux *server's*, refreshed only for the variables in 'update-environment'.
+# CLAUDE_CONFIG_DIR is not one of those, so passing it implicitly only worked
+# when this very call also started the server - on a host that already had a
+# tmux session running, -a was silently ignored. Hand it to the command
+# explicitly, and record it in the session's own environment so 'ccx ls' can
+# read the account back and later windows in the session start on it too.
+if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
+    tmux new-session -d -s "$SESSION" \
+        "exec env CLAUDE_CONFIG_DIR='$CLAUDE_CONFIG_DIR' '$GUARD_BIN_DIR/claude-guarded'" || exit 1
+    tmux set-environment -t "$SESSION" CLAUDE_CONFIG_DIR "$CLAUDE_CONFIG_DIR"
+    exec tmux attach -t "$SESSION"
+fi
+
 exec tmux new-session -s "$SESSION" "exec '$GUARD_BIN_DIR/claude-guarded'"
