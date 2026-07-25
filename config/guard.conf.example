@@ -43,6 +43,10 @@ CLAUDE_MEMORY_MAX=3G
 # The Claude Code executable, if it is not simply 'claude' on PATH.
 # CLAUDE_BIN=claude
 
+# Where 'ccx <name> -a <account>' keeps per-account Claude Code config
+# directories, so several accounts can stay logged in side by side.
+# CLAUDE_ACCOUNTS_DIR=$HOME/.claude-accounts
+
 # --- notifications -----------------------------------------------------------
 
 # Command receiving the subject as its argument and the body on stdin. Leave it

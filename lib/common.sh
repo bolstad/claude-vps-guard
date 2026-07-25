@@ -23,7 +23,7 @@ GUARD_LOG="$GUARD_LOG_DIR/memwatch.log"
 # 'DRY_RUN=1 claude-memwatch' would be silently overridden by the file.
 GUARD_TUNABLES="INTERVAL FLOOR_MB CRIT_MB PROC_HARD_MB SWAP_FLOOR_MB
 NOTIFY_COOLDOWN DRY_RUN MAX_TICKS KEEP_LOG_BYTES CLAUDE_MEMORY_MAX CLAUDE_BIN
-GUARD_USER CAND_RE NOTIFY_CMD"
+GUARD_USER CAND_RE NOTIFY_CMD CLAUDE_ACCOUNTS_DIR"
 
 if [ -r "$GUARD_CONFIG" ]; then
     _guard_from_env=""
@@ -51,6 +51,7 @@ DRY_RUN="${DRY_RUN:-0}"
 MAX_TICKS="${MAX_TICKS:-0}"
 CLAUDE_MEMORY_MAX="${CLAUDE_MEMORY_MAX:-3G}"
 CLAUDE_BIN="${CLAUDE_BIN:-claude}"
+CLAUDE_ACCOUNTS_DIR="${CLAUDE_ACCOUNTS_DIR:-$HOME/.claude-accounts}"
 GUARD_USER="${GUARD_USER:-$(id -un)}"
 
 # Which processes may be paused. Infrastructure (sshd, tmux, bash, the watchdog

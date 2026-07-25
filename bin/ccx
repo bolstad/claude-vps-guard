@@ -5,13 +5,24 @@
 # and that are memory capped where the platform supports it. A 'claude -p' run
 # from cron is unaffected.
 #
-#   ccx           -> session "claude"
-#   ccx <name>    -> session <name>   (several names = several parallel sessions)
-#   ccx ls        -> list Claude sessions with memory per session
-#   ccx --help    -> this text
+#   ccx                       -> session "claude"
+#   ccx <name>                -> session <name>   (several names = several parallel sessions)
+#   ccx <name> -a <account>   -> session <name>, logged in as <account>
+#   ccx ls                    -> list Claude sessions with memory per session
+#   ccx --help                -> this text
+#
+# Multiple accounts: -a/--account <name> points Claude Code at its own config
+# directory (~/.claude-accounts/<name> by default), so two accounts can stay
+# logged in side by side without re-authenticating. The account only needs to
+# be given when a session is first created - it lives in that tmux session's
+# environment from then on, so a plain 'ccx <name>' reattaches with the same
+# account already in place. Set CLAUDE_CONFIG_DIR yourself beforehand to
+# override the directory for a single call.
 #
 # Environment: CLAUDE_MEMORY_MAX (per-session cap, default 3G on Linux),
-#              CLAUDE_TMUX_SESSION (default session name).
+#              CLAUDE_TMUX_SESSION (default session name),
+#              CLAUDE_ACCOUNT (default account), CLAUDE_ACCOUNTS_DIR
+#              (default ~/.claude-accounts).
 # ("ls" and --help are reserved and cannot be used as session names. A bare
 #  'help' is not reserved, so it still starts a session called "help".)
 set -u
@@ -28,17 +39,41 @@ GUARD_BIN_DIR="$(cd "$(dirname "$self")" && pwd)"
 # shellcheck source=../lib/common.sh
 . "$GUARD_BIN_DIR/../lib/common.sh"
 
-case "${1:-}" in
-    -h|--help)
-        # The header doubles as the help text. The command is renameable via
-        # CC_COMMAND_NAME, so print the name it was actually invoked under.
-        awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$self" \
-            | sed "s/ccx/$(basename "$0")/g"
-        exit 0
-        ;;
-esac
+ACCOUNT="${CLAUDE_ACCOUNT:-}"
+SESSION=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -h|--help)
+            # The header doubles as the help text. The command is renameable
+            # via CC_COMMAND_NAME, so print the name it was actually invoked
+            # under.
+            awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$self" \
+                | sed "s/ccx/$(basename "$0")/g"
+            exit 0
+            ;;
+        -a|--account)
+            ACCOUNT="${2:-}"
+            shift 2
+            ;;
+        --account=*)
+            ACCOUNT="${1#--account=}"
+            shift
+            ;;
+        *)
+            [ -z "$SESSION" ] && SESSION="$1"
+            shift
+            ;;
+    esac
+done
 
-SESSION="${1:-${CLAUDE_TMUX_SESSION:-claude}}"
+SESSION="${SESSION:-${CLAUDE_TMUX_SESSION:-claude}}"
+
+if [ -n "$ACCOUNT" ]; then
+    # CLAUDE_ACCOUNTS_DIR comes from common.sh (config file / env / default).
+    : "${CLAUDE_CONFIG_DIR:=$CLAUDE_ACCOUNTS_DIR/$ACCOUNT}"
+    export CLAUDE_CONFIG_DIR
+    mkdir -p "$CLAUDE_CONFIG_DIR"
+fi
 
 # Memory used by one tmux session. On Linux a capped session lives in its own
 # systemd scope, whose cgroup accounting is exact; everywhere else the process
@@ -67,13 +102,25 @@ session_memory_mb() {
     echo $(( total / 1024 / 1024 ))
 }
 
+# The account a session was created with, read back from that tmux session's
+# own environment (baked in at 'new-session' time, so this works after
+# reattaching too). "-" when the session used the default account.
+session_account() {
+    local line
+    line="$(tmux show-environment -t "$1" CLAUDE_CONFIG_DIR 2>/dev/null)"
+    case "$line" in
+        CLAUDE_CONFIG_DIR=*) basename "${line#CLAUDE_CONFIG_DIR=}" ;;
+        *) echo "-" ;;
+    esac
+}
+
 if [ "$SESSION" = "ls" ]; then
     command -v tmux >/dev/null 2>&1 || { echo "tmux is not installed" >&2; exit 1; }
     if ! tmux ls >/dev/null 2>&1; then echo "(no tmux sessions)"; exit 0; fi
-    printf '%-24s %-9s %-8s %s\n' SESSION MEMORY WINDOWS CREATED
+    printf '%-24s %-9s %-8s %-14s %s\n' SESSION MEMORY WINDOWS ACCOUNT CREATED
     tmux list-sessions -F '#{session_name}|#{session_windows}|#{t:session_created}' 2>/dev/null \
     | while IFS='|' read -r name windows created; do
-        printf '%-24s %-9s %-8s %s\n' "$name" "$(session_memory_mb "$name") MB" "$windows" "$created"
+        printf '%-24s %-9s %-8s %-14s %s\n' "$name" "$(session_memory_mb "$name") MB" "$windows" "$(session_account "$name")" "$created"
     done
     exit 0
 fi

@@ -15,7 +15,7 @@ Works on Linux and macOS. Bash 3.2 compatible, so the stock macOS shell is enoug
 
 | Command | Purpose |
 | --- | --- |
-| `ccx` | Start or reattach to a named tmux session running Claude Code, memory capped where the platform allows it. |
+| `ccx` | Start or reattach to a named tmux session running Claude Code, memory capped where the platform allows it. `-a <account>` runs it under a separate, persistent login. |
 | `ccx ls` | List Claude sessions with memory used per session. |
 | `claude-guard` | Inspect the watchdog, see and release paused processes, control the service. |
 
@@ -90,6 +90,25 @@ claude-guard restart      # restart the watchdog service
 Detach from a session with `Ctrl-b d`; `ccx <name>` reattaches. A `claude -p` run from cron is
 untouched by any of this.
 
+### Multiple accounts
+
+`ccx <name> -a <account>` runs that session's Claude Code against its own config directory
+(`~/.claude-accounts/<account>` by default), so two or more Anthropic accounts can stay logged in
+side by side without re-authenticating - the same trick as `CLAUDE_CONFIG_DIR`, wired into
+sessions instead of shell aliases:
+
+```sh
+ccx work -a acme       # first run: log in, credentials saved under ~/.claude-accounts/acme
+ccx personal -a other  # a second account, fully independent
+ccx work                # later: reattaches to "work", still the "acme" account
+ccx ls                  # SESSION, MEMORY, WINDOWS, ACCOUNT, CREATED
+```
+
+The account only needs to be given when a session is first created; it is stored in that tmux
+session's own environment, so plain `ccx <name>` reattaches with the same account already active.
+Set `CLAUDE_CONFIG_DIR` yourself before calling `ccx` to point at an arbitrary directory instead,
+or `CLAUDE_ACCOUNTS_DIR` to change where per-account directories are created.
+
 ## Configuration
 
 Everything lives in `~/.config/claude-vps-guard/guard.conf`; environment variables override it.
@@ -103,6 +122,7 @@ See [`config/guard.conf.example`](config/guard.conf.example) for the annotated d
 | `PROC_HARD_MB` | `2800` | Pause any single process above this, regardless of free memory. |
 | `SWAP_FLOOR_MB` | `400` | Treat low free swap as pressure, when swap exists. |
 | `CLAUDE_MEMORY_MAX` | `3G` | Per-session cap (Linux only). |
+| `CLAUDE_ACCOUNTS_DIR` | `~/.claude-accounts` | Where `ccx -a <account>` keeps per-account config dirs. |
 | `DRY_RUN` | `0` | `1` logs intended actions without pausing or notifying. |
 | `CAND_RE` | see example | Command names eligible for pausing. |
 
