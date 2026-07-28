@@ -4,9 +4,10 @@
 # environment variables override this file. All sizes are megabytes.
 #
 # The defaults are sized for a small VPS (a few GB of RAM). On a workstation
-# with more memory, scale the thresholds up accordingly - as a rule of thumb,
-# on a 32G machine: FLOOR_MB=2048, CRIT_MB=1024, PROC_HARD_MB=8192,
-# SWAP_FLOOR_MB=1024. The watchdog rereads this file on 'claude-guard restart'.
+# with more memory, scale the thresholds up accordingly. As a rule of thumb,
+# on a 32G machine: FLOOR_MB=2048, CRIT_MB=1024, PROC_HARD_MB=8192. Leave
+# SWAP_FLOOR_MB alone, and set it to 0 on macOS (see the note at the setting).
+# The watchdog rereads this file on 'claude-guard restart'.
 
 # --- watchdog thresholds -----------------------------------------------------
 
@@ -23,6 +24,14 @@ CRIT_MB=450
 PROC_HARD_MB=2800
 
 # When swap exists, treat little free swap as pressure too.
+#
+# SET THIS TO 0 ON macOS. macOS grows its swap file on demand, so free swap
+# never trends toward zero under pressure; it stays inside a narrow band. Any
+# floor at or above that band is permanently true, and the watchdog then pauses
+# a process on every tick with plenty of RAM free. Measured: 1024 on a 16G Mac
+# gave 4453 spurious pauses, all logged 'low-mem', some with 8G available.
+# 0 disables the rule, because 'swapfree < 0' is never true. On Linux with a
+# fixed swap partition the setting works as intended; keep it there.
 SWAP_FLOOR_MB=400
 
 # Minimum seconds between notifications. Pauses are always logged.
