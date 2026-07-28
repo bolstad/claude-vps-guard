@@ -90,6 +90,23 @@ claude-guard restart      # restart the watchdog service
 Detach from a session with `Ctrl-b d`; `ccx <name>` reattaches. A `claude -p` run from cron is
 untouched by any of this.
 
+### When `resume` looks like it did not work
+
+A session that is a background job of a terminal cannot be revived from outside that terminal.
+`resume` does send `SIGCONT` and the process does start running, but the moment it touches the
+terminal that another job holds in the foreground, the kernel stops it again with `SIGTTIN` or
+`SIGTTOU`. Within seconds it is back in state `T`, which looks exactly like the watchdog freezing
+it a second time.
+
+Tell the two apart in the log: a watchdog pause always writes a `PAUSED` line and a marker file
+under `~/.cache/claude-vps-guard/paused/`, job control writes neither. To actually use such a
+session again, bring it to the foreground with `fg` in its own terminal.
+
+The same mechanism makes `SIGTERM` useless on those processes. They wake, try to write their
+shutdown output to the terminal, get stopped, and never process the signal. `claude-guard kill`
+sends `SIGKILL`, which cannot be blocked or deferred, and is the way to clear an abandoned
+session.
+
 ### Multiple accounts
 
 `ccx <name> -a <account>` runs that session's Claude Code against its own config directory
@@ -120,15 +137,23 @@ See [`config/guard.conf.example`](config/guard.conf.example) for the annotated d
 | `FLOOR_MB` | `900` | Pause the largest candidate below this much available memory. |
 | `CRIT_MB` | `450` | Emergency: pause up to three at once. |
 | `PROC_HARD_MB` | `2800` | Pause any single process above this, regardless of free memory. |
-| `SWAP_FLOOR_MB` | `400` | Treat low free swap as pressure, when swap exists. |
+| `SWAP_FLOOR_MB` | `400` | Treat low free swap as pressure, when swap exists. Set `0` on macOS, see below. |
 | `CLAUDE_MEMORY_MAX` | `3G` | Per-session cap (Linux only). |
 | `CLAUDE_ACCOUNTS_DIR` | `~/.claude-accounts` | Where `ccx -a <account>` keeps per-account config dirs. |
 | `DRY_RUN` | `0` | `1` logs intended actions without pausing or notifying. |
 | `CAND_RE` | see example | Command names eligible for pausing. |
 
-The defaults are sized for a small VPS. On a machine with more RAM, scale the thresholds up -
-on a 32G workstation something like `FLOOR_MB=2048`, `CRIT_MB=1024`, `PROC_HARD_MB=8192`,
-`SWAP_FLOOR_MB=1024`. `claude-guard restart` picks up the new values.
+The defaults are sized for a small VPS. On a machine with more RAM, scale the thresholds up:
+on a 32G workstation something like `FLOOR_MB=2048`, `CRIT_MB=1024`, `PROC_HARD_MB=8192`.
+`claude-guard restart` picks up the new values.
+
+**Do not scale `SWAP_FLOOR_MB` up on macOS. Set it to `0` there.** macOS grows its swap file on
+demand, so free swap stays inside a narrow band instead of falling under pressure, and any floor
+at or above that band makes the rule permanently true. The watchdog then freezes a process every
+tick with plenty of RAM free. This was measured: `SWAP_FLOOR_MB=1024` on a 16G Mac produced 4453
+spurious pauses, all logged as `low-mem`, some with 8G available. See
+[docs/platforms.md](docs/platforms.md) for how to recognise it in the log. On Linux the setting
+works as intended and the default is fine.
 
 Tune on a quiet machine with `DRY_RUN=1` first:
 
