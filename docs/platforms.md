@@ -28,12 +28,20 @@ free + inactive + speculative + purgeable pages, which matches what Activity Mon
 available. It is an estimate: under heavy file caching macOS may report more headroom than a
 single process can actually claim at once.
 
-### Swap, and why `SWAP_FLOOR_MB` does not work on macOS
+### Swap, and why the swap rule is disabled on macOS
 
 Swap is read from `/proc/meminfo` on Linux and `sysctl vm.swapusage` on macOS.
 
-**On macOS, free swap is not a pressure signal, and the swap rule should be disabled there.**
-Set `SWAP_FLOOR_MB=0`, which makes the rule inert because `swapfree < 0` is never true.
+**On macOS, free swap is not a pressure signal, so the swap rule is disabled there and you do not
+need to configure anything.** `lib/common.sh` forces `SWAP_FLOOR_MB` to 0 when it detects macOS,
+which makes `swapfree < SWAP_FLOOR_MB` unsatisfiable and takes rule 3 out of play for every tool
+at once. A value set anyway, in the config file or the environment, is ignored rather than
+silently dropped: the watchdog says so on its first log line, and `claude-guard config` shows it.
+
+```
+$ claude-guard config | grep swap
+swap_floor_mb    0  (rule disabled on macOS, 1024 ignored)
+```
 
 On Linux with a fixed swap partition, `SwapFree` genuinely falls as swap fills, so a floor under
 it detects real pressure. macOS instead sizes its swap file dynamically and grows it in chunks the
@@ -46,15 +54,15 @@ $ sysctl vm.swapusage
 vm.swapusage: total = 3072.00M  used = 1934.81M  free = 1137.19M  (encrypted)
 ```
 
-Any `SWAP_FLOOR_MB` at or above that band is then permanently satisfied, and rule 3 fires on every
-tick forever. Measured on a 16G MacBook Air: `SWAP_FLOOR_MB=1024` produced 4453 `PAUSED` entries,
-every single one with reason `low-mem`, many with 7 to 8G of available memory, far above a
-`FLOOR_MB` of 2048. None of the pauses were driven by actual memory pressure. Two interactive
-sessions sat frozen for over a day.
+Any `SWAP_FLOOR_MB` at or above that band would therefore be permanently satisfied, firing rule 3
+on every tick forever. That is what happened before the rule was disabled here. Measured on a 16G
+MacBook Air: `SWAP_FLOOR_MB=1024` produced 4453 `PAUSED` entries, every single one with reason
+`low-mem`, many with 7 to 8G of available memory, far above a `FLOOR_MB` of 2048. None of the
+pauses were driven by actual memory pressure. Two interactive sessions sat frozen for over a day.
 
-The failure is quiet by design. The watchdog is doing exactly what it was told, the log reason
-says `low-mem`, and only the `avail=` figure in the same line reveals that memory was never low.
-To check a machine:
+The failure was quiet by design. The watchdog was doing exactly what it was told, the log reason
+said `low-mem`, and only the `avail=` figure in the same line revealed that memory was never low.
+To check a machine still running an older version:
 
 ```sh
 grep -o 'reason=[a-z-]*' ~/.cache/claude-vps-guard/logs/memwatch.log | sort | uniq -c

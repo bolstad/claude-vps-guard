@@ -25,13 +25,14 @@ PROC_HARD_MB=2800
 
 # When swap exists, treat little free swap as pressure too.
 #
-# SET THIS TO 0 ON macOS. macOS grows its swap file on demand, so free swap
-# never trends toward zero under pressure; it stays inside a narrow band. Any
-# floor at or above that band is permanently true, and the watchdog then pauses
-# a process on every tick with plenty of RAM free. Measured: 1024 on a 16G Mac
-# gave 4453 spurious pauses, all logged 'low-mem', some with 8G available.
-# 0 disables the rule, because 'swapfree < 0' is never true. On Linux with a
-# fixed swap partition the setting works as intended; keep it there.
+# LINUX ONLY. The rule is disabled on macOS, where this value is forced to 0 and
+# a value set here is reported as ignored. macOS grows its swap file on demand,
+# so free swap never trends toward zero under pressure; it stays inside a narrow
+# band. Any floor at or above that band would be permanently true, pausing a
+# process on every tick with plenty of RAM free. Measured before the rule was
+# disabled: 1024 on a 16G Mac gave 4453 spurious pauses, all logged 'low-mem',
+# some with 8G available. On Linux with a fixed swap partition the setting works
+# as intended; keep it there.
 SWAP_FLOOR_MB=400
 
 # Minimum seconds between notifications. Pauses are always logged.

@@ -137,7 +137,7 @@ See [`config/guard.conf.example`](config/guard.conf.example) for the annotated d
 | `FLOOR_MB` | `900` | Pause the largest candidate below this much available memory. |
 | `CRIT_MB` | `450` | Emergency: pause up to three at once. |
 | `PROC_HARD_MB` | `2800` | Pause any single process above this, regardless of free memory. |
-| `SWAP_FLOOR_MB` | `400` | Treat low free swap as pressure, when swap exists. Set `0` on macOS, see below. |
+| `SWAP_FLOOR_MB` | `400` | Treat low free swap as pressure, when swap exists. Linux only, see below. |
 | `CLAUDE_MEMORY_MAX` | `3G` | Per-session cap (Linux only). |
 | `CLAUDE_ACCOUNTS_DIR` | `~/.claude-accounts` | Where `ccx -a <account>` keeps per-account config dirs. |
 | `DRY_RUN` | `0` | `1` logs intended actions without pausing or notifying. |
@@ -147,13 +147,14 @@ The defaults are sized for a small VPS. On a machine with more RAM, scale the th
 on a 32G workstation something like `FLOOR_MB=2048`, `CRIT_MB=1024`, `PROC_HARD_MB=8192`.
 `claude-guard restart` picks up the new values.
 
-**Do not scale `SWAP_FLOOR_MB` up on macOS. Set it to `0` there.** macOS grows its swap file on
-demand, so free swap stays inside a narrow band instead of falling under pressure, and any floor
-at or above that band makes the rule permanently true. The watchdog then freezes a process every
-tick with plenty of RAM free. This was measured: `SWAP_FLOOR_MB=1024` on a 16G Mac produced 4453
-spurious pauses, all logged as `low-mem`, some with 8G available. See
-[docs/platforms.md](docs/platforms.md) for how to recognise it in the log. On Linux the setting
-works as intended and the default is fine.
+**`SWAP_FLOOR_MB` does nothing on macOS; the swap rule is disabled there.** macOS grows its swap
+file on demand, so free swap stays inside a narrow band instead of falling under pressure, and any
+floor at or above that band would make the rule permanently true, freezing a process every tick
+with plenty of RAM free. Measured before it was disabled: `SWAP_FLOOR_MB=1024` on a 16G Mac
+produced 4453 spurious pauses, all logged as `low-mem`, some with 8G available. The value is now
+forced to `0` on macOS, and a value set anyway is reported as ignored rather than dropped
+silently. On Linux the setting works as intended and the default is fine. Details in
+[docs/platforms.md](docs/platforms.md).
 
 Tune on a quiet machine with `DRY_RUN=1` first:
 

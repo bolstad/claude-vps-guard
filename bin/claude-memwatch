@@ -124,6 +124,9 @@ send_alert() {
 }
 
 log "=== START claude-memwatch (os=$GUARD_OS interval=${INTERVAL}s floor=${FLOOR_MB} crit=${CRIT_MB} swapfloor=${SWAP_FLOOR_MB} hard=${PROC_HARD_MB} dry=${DRY_RUN}) ==="
+if [ -n "$GUARD_SWAP_FLOOR_IGNORED" ]; then
+    log "SWAP_FLOOR_MB=$GUARD_SWAP_FLOOR_IGNORED ignored: free swap is not a pressure signal on macOS, so the swap rule is disabled (see docs/platforms.md)"
+fi
 
 TICK=0
 while true; do
@@ -164,6 +167,9 @@ while true; do
     done <<<"$cands"
 
     # Rules 2 and 3: memory pressure - RAM floor, plus swap floor when swap exists.
+    # Rule 3 is Linux only: common.sh forces SWAP_FLOOR_MB to 0 on macOS, which
+    # leaves the comparison unsatisfiable there. See the comment on
+    # GUARD_SWAP_FLOOR_IGNORED for why free swap means nothing on that platform.
     press=""
     if [ "$avail" -lt "$CRIT_MB" ]; then
         press=crit
