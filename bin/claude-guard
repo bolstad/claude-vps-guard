@@ -136,7 +136,7 @@ case "$cmd" in
             floor_mb "$FLOOR_MB" \
             crit_mb "$CRIT_MB" \
             proc_hard_mb "$PROC_HARD_MB" \
-            swap_floor_mb "$SWAP_FLOOR_MB" \
+            swap_floor_mb "$SWAP_FLOOR_MB${GUARD_SWAP_FLOOR_IGNORED:+  (rule disabled on macOS, ${GUARD_SWAP_FLOOR_IGNORED} ignored)}" \
             memory_max "$CLAUDE_MEMORY_MAX" \
             notify_cmd "${NOTIFY_CMD:-(bundled SMTP sender)}" \
             candidates_re "$CAND_RE"

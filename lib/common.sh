@@ -70,6 +70,23 @@ guard_os() {
 
 GUARD_OS="$(guard_os)"
 
+# The swap rule is Linux only. macOS sizes its swap file dynamically and grows
+# it on demand, so free swap never trends toward zero under pressure: it
+# oscillates inside a narrow band roughly one growth chunk wide. A floor under
+# it is therefore permanently true, and the watchdog would pause a process on
+# every tick with plenty of RAM free. Measured: SWAP_FLOOR_MB=1024 on a 16G Mac
+# produced 4453 pauses, all logged 'low-mem', some with 8G available.
+#
+# Forcing the floor to 0 here makes 'swapfree < SWAP_FLOOR_MB' unsatisfiable,
+# which disables the rule for every tool at once. A value set anyway (config
+# file or environment) is kept in GUARD_SWAP_FLOOR_IGNORED so the tools can say
+# they ignored it rather than dropping it silently. See docs/platforms.md.
+GUARD_SWAP_FLOOR_IGNORED=""
+if [ "$GUARD_OS" = macos ] && [ "${SWAP_FLOOR_MB:-0}" -gt 0 ] 2>/dev/null; then
+    GUARD_SWAP_FLOOR_IGNORED="$SWAP_FLOOR_MB"
+    SWAP_FLOOR_MB=0
+fi
+
 # Megabytes of memory that can be handed out without swapping or reclaiming.
 mem_available_mb() {
     if [ "$GUARD_OS" = linux ]; then
