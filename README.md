@@ -37,7 +37,7 @@ pauses itself.
 ```sh
 git clone https://github.com/bolstad/claude-vps-guard.git
 cd claude-vps-guard
-./install.sh
+./install.sh          # or: make install
 ```
 
 The installer copies the tools to `~/.local/share/claude-vps-guard`, links `ccx` and

@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`make install` built a stale copy of the installer instead of running it.**
+  With no makefile in the tree, the target `install` matched make's built-in
+  `%: %.sh` rule, whose recipe is `cat $< >$@` followed by `chmod a+x $@`. The
+  result was an executable file named `install`, byte-identical to `install.sh`
+  at that moment and silently out of date from the next edit onwards, sitting in
+  the repository root looking exactly like a real installer. Added a makefile
+  with phony `install`, `uninstall` and `help` targets, so `make install` runs
+  the installer. Environment variables such as `NO_SERVICE=1` and `PREFIX` pass
+  through unchanged.
+
 ## [1.0.0] - 2026-08-04
 
 First tagged release. Everything below was developed between 2026-07-18 and
