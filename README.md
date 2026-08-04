@@ -70,6 +70,27 @@ sudo loginctl enable-linger "$USER"
 
 Remove everything with `./uninstall.sh` (`PURGE=1` also drops config and logs).
 
+## Upgrade
+
+The installer copies files rather than linking to the clone, so pulling new commits changes
+nothing until you install again:
+
+```sh
+git pull
+./install.sh          # also restarts the watchdog so it runs the new code
+```
+
+Worth doing deliberately, because an out-of-date install fails quietly rather than loudly: the
+commands keep working, just with the old behaviour. `claude-guard config` prints the effective
+paths and settings, so you can at least confirm which files are in play and compare them against
+the clone.
+
+`NO_SERVICE=1 ./install.sh` updates the files without touching the running watchdog, which is the
+safer choice mid-session, but the service then keeps the old code until the next
+`claude-guard restart`.
+
+Changes are listed in [CHANGELOG.md](CHANGELOG.md).
+
 ## Use
 
 ```sh
