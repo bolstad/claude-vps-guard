@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `ccx resumable [N|all]`: list Claude Code conversations you can resume, newest first, across
+  the default account *and* every `-a` account under `CLAUDE_ACCOUNTS_DIR`. Reads each session's
+  own recorded working directory instead of decoding it back out of the encoded project directory
+  name, which is ambiguous the moment a real path contains a dash (`~/.claude/projects` turns every
+  `/` into `-`). Pairs with `ccx <name> -a <account> -r`: this finds which directory and account a
+  dropped session needs, that one rebuilds it. Solves the same problem as `-r` above, one level up -
+  `-r` resumes a session once you already know where it lived; `resumable` is how you find that out
+  after a reboot wipes every tmux session at once.
 - `ccx <name> -r`/`--resume`: build the same tmux session, memory cap and
   account as usual, but hand Claude Code `--resume` instead of starting a
   blank conversation. For picking sessions back up after a reboot wipes tmux

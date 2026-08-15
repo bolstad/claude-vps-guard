@@ -10,6 +10,8 @@
 #   ccx <name> -a <account>   -> session <name>, logged in as <account>
 #   ccx <name> -r             -> session <name>, running 'claude --resume'
 #   ccx ls                    -> list Claude sessions with memory per session
+#   ccx resumable [N|all]     -> Claude Code conversations you can resume,
+#                                 across every account, newest first
 #   ccx --help                -> this text
 #
 # Multiple accounts: -a/--account <name> points Claude Code at its own config
@@ -25,14 +27,16 @@
 # For picking up sessions that were still running when the machine rebooted -
 # the tmux sessions are gone, but Claude Code's own history on disk is not.
 # Only takes effect when a new session is actually created; reattaching to a
-# session that is already running ignores it.
+# session that is already running ignores it. 'ccx resumable' finds which
+# directory and account to run it from.
 #
 # Environment: CLAUDE_MEMORY_MAX (per-session cap, default 3G on Linux),
 #              CLAUDE_TMUX_SESSION (default session name),
 #              CLAUDE_ACCOUNT (default account), CLAUDE_ACCOUNTS_DIR
 #              (default ~/.claude-accounts).
-# ("ls" and --help are reserved and cannot be used as session names. A bare
-#  'help' is not reserved, so it still starts a session called "help".)
+# ("ls", "resumable" and --help are reserved and cannot be used as session
+#  names. A bare 'help' is not reserved, so it still starts a session called
+#  "help".)
 set -u
 
 self="${BASH_SOURCE[0]}"
@@ -50,6 +54,7 @@ GUARD_BIN_DIR="$(cd "$(dirname "$self")" && pwd)"
 ACCOUNT="${CLAUDE_ACCOUNT:-}"
 SESSION=""
 RESUME=""
+EXTRA_ARG=""
 while [ $# -gt 0 ]; do
     case "$1" in
         -h|--help)
@@ -73,7 +78,14 @@ while [ $# -gt 0 ]; do
             shift
             ;;
         *)
-            [ -z "$SESSION" ] && SESSION="$1"
+            if [ -z "$SESSION" ]; then
+                SESSION="$1"
+            elif [ -z "$EXTRA_ARG" ]; then
+                # Only meaningful for 'ccx resumable [N|all]'; a plain session
+                # name never reaches this branch since one positional is all
+                # 'ccx <name>' takes.
+                EXTRA_ARG="$1"
+            fi
             shift
             ;;
     esac
@@ -135,6 +147,53 @@ if [ "$SESSION" = "ls" ]; then
     | while IFS='|' read -r name windows created; do
         printf '%-24s %-9s %-8s %-14s %s\n' "$name" "$(session_memory_mb "$name") MB" "$windows" "$(session_account "$name")" "$created"
     done
+    exit 0
+fi
+
+# The first line of a Claude Code conversation that actually holds a working
+# directory. Read straight from the session's own record instead of decoding
+# it back out of the project directory name: '~/.claude/projects' encodes a
+# path by turning every '/' into '-', which is ambiguous the moment a real
+# directory name contains a dash too (e.g. 'claude-vps-guard').
+session_cwd() {
+    grep -m1 -o '"cwd":"[^"]*"' "$1" | sed 's/^"cwd":"//; s/"$//'
+}
+
+# File mtime as epoch seconds, then as a human timestamp. 'stat' and 'date'
+# take incompatible flags on BSD (macOS) vs GNU (Linux); each pair below tries
+# the BSD form first and falls through to the GNU form on failure rather than
+# branching on GUARD_OS, since that is the only difference between them.
+file_mtime_epoch() { stat -f '%m' "$1" 2>/dev/null || stat -c '%Y' "$1" 2>/dev/null; }
+epoch_to_human() { date -r "$1" '+%Y-%m-%d %H:%M' 2>/dev/null || date -d "@$1" '+%Y-%m-%d %H:%M' 2>/dev/null; }
+
+# Every '<id>.jsonl' under a Claude Code projects dir, one 'epoch<TAB>account
+# <TAB>id<TAB>cwd' line per session. $1 = projects dir, $2 = account label.
+list_resumable() {
+    local pdir="$1" account="$2" f cwd
+    for f in "$pdir"/*/*.jsonl; do
+        [ -e "$f" ] || continue
+        cwd="$(session_cwd "$f")"
+        [ -n "$cwd" ] || continue
+        printf '%s\t%s\t%s\t%s\n' "$(file_mtime_epoch "$f")" "$account" "$(basename "$f" .jsonl)" "$cwd"
+    done
+}
+
+if [ "$SESSION" = "resumable" ]; then
+    LIMIT="${EXTRA_ARG:-30}"
+    printf '%-17s %-12s %-38s %s\n' TIME ACCOUNT SESSION PATH
+    {
+        list_resumable "$HOME/.claude/projects" "-"
+        for acct_dir in "$CLAUDE_ACCOUNTS_DIR"/*/; do
+            [ -d "$acct_dir/projects" ] || continue
+            list_resumable "$acct_dir/projects" "$(basename "$acct_dir")"
+        done
+    } | sort -t "$(printf '\t')" -k1,1rn \
+      | { [ "$LIMIT" = all ] && cat || head -n "$LIMIT"; } \
+      | while IFS="$(printf '\t')" read -r mtime account id cwd; do
+            printf '%-17s %-12s %-38s %s\n' "$(epoch_to_human "$mtime")" "$account" "$id" "$cwd"
+        done
+    echo
+    echo "Resume one with: cd <path> && ccx <name> -a <account> -r   ('-a' only for a non-'-' account)"
     exit 0
 fi
 

@@ -17,6 +17,7 @@ Works on Linux and macOS. Bash 3.2 compatible, so the stock macOS shell is enoug
 | --- | --- |
 | `ccx` | Start or reattach to a named tmux session running Claude Code, memory capped where the platform allows it. `-a <account>` runs it under a separate, persistent login; `-r` resumes the previous conversation instead of starting a blank one. |
 | `ccx ls` | List Claude sessions with memory used per session. |
+| `ccx resumable` | List Claude Code conversations you can resume, across every account, newest first. |
 | `claude-guard` | Inspect the watchdog, see and release paused processes, control the service. |
 
 Two layers of protection:
@@ -97,6 +98,7 @@ Changes are listed in [CHANGELOG.md](CHANGELOG.md).
 ccx                # session "claude"
 ccx review         # a second, parallel session named "review"
 ccx ls             # sessions with memory per session
+ccx resumable      # Claude Code conversations you can resume, across every account
 
 claude-guard              # memory, candidates, paused processes
 claude-guard list         # paused processes only
@@ -159,6 +161,31 @@ ccx work -r          # new "work" session, running 'claude --resume'
 
 `-r` only takes effect when a new tmux session is actually created; reattaching to a session that
 is still running ignores it, same as `-a`.
+
+The catch is knowing *which* directory and account each dropped session was running under - a
+reboot leaves no tmux to remind you. `ccx resumable` answers that by reading Claude Code's own
+conversation history directly (`~/.claude/projects` for the default account, plus
+`<CLAUDE_ACCOUNTS_DIR>/*/projects` for every `-a` account), newest first:
+
+```sh
+ccx resumable       # last 30 conversations, across every account
+ccx resumable 100   # last 100
+ccx resumable all   # everything
+```
+
+```
+TIME              ACCOUNT      SESSION                                PATH
+2026-08-15 19:51  -            f1c49de2-4654-45d8-aaaf-cb2baf940bff   /home/me/claude-vps-guard
+2026-08-15 19:51  atdt         44b6663b-7fa9-406c-9559-e57fe093752d   /home/me/some-project
+```
+
+`ACCOUNT` is `-` for the default account, matching the `ACCOUNT` column in `ccx ls`. Pick a row and
+resume it with:
+
+```sh
+cd /home/me/some-project
+ccx work -a atdt -r   # drop '-a' for a '-' (default account) row
+```
 
 ## Configuration
 
