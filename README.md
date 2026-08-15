@@ -16,6 +16,7 @@ Works on Linux and macOS. Bash 3.2 compatible, so the stock macOS shell is enoug
 | Command | Purpose |
 | --- | --- |
 | `ccx` | Start or reattach to a named tmux session running Claude Code, memory capped where the platform allows it. `-a <account>` runs it under a separate, persistent login; `-r` resumes the previous conversation instead of starting a blank one. |
+| `ccx -c <session-id>` | Continue one specific Claude Code conversation by id: finds its directory and account automatically, or jumps to its tmux pane if it is already running. |
 | `ccx ls` | List Claude sessions with memory used per session. |
 | `ccx resumable` | List Claude Code conversations you can resume, across every account, newest first - flags which ones already have a live process attached. |
 | `claude-guard` | Inspect the watchdog, see and release paused processes, control the service. |
@@ -198,6 +199,24 @@ apart, not just the file's presence:
 cd /home/me/some-project
 ccx work -a atdt -r   # drop '-a' for a '-' (default account) row
 ```
+
+Or skip the `cd` and the account bookkeeping entirely and hand `ccx` the session id straight from the
+`resumable` list:
+
+```sh
+ccx -c f1c49de2-4654-45d8-aaaf-cb2baf940bff
+```
+
+`-c`/`--continue <session-id>` looks the id up itself - directory, account, everything - and builds a
+new tmux session there, named after the target directory (`claude-vps-guard`, deduped against
+whatever tmux sessions already exist), running `claude --resume` for that exact conversation. Give it
+an explicit name to control that instead (`ccx work -c <id>`), with the same caveat as `-a` and `-r`:
+an existing tmux session of that name is reattached as-is, ignoring `-c`.
+
+If the id turns out to be `active` rather than `resumable`, `-c` does not start a second, duplicate
+conversation - it jumps straight to the tmux pane that already has it (found through the same
+`sessions/<pid>.json` lock file `resumable` reads `STATUS` from), or says so if that process is not
+reachable through tmux.
 
 ## Configuration
 

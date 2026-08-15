@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `ccx -c`/`--continue <session-id>`: the one-step version of `ccx resumable` + `ccx <name> -a
+  <account> -r`. Looks up which directory and account a specific session id belongs to (across
+  every account, same lookup `resumable` uses) and builds a new tmux session there running `claude
+  --resume <session-id>`, named after the target directory and deduped against whatever tmux
+  sessions already exist so several `-c` calls in a row do not pile into the same session. If that
+  id is already `active` rather than `resumable`, it does not start a duplicate conversation -
+  it jumps straight to the tmux pane already holding it (via the `tmux` target Claude Code records
+  in `sessions/<pid>.json` when launched inside one), or reports the live pid if that pane is not
+  reachable through tmux. An explicit name (`ccx work -c <id>`) reattaches to an existing tmux
+  session of that name first, same as `-a` and `-r`.
 - `ccx resumable [N|all]`: list Claude Code conversations you can resume, newest first, across
   the default account *and* every `-a` account under `CLAUDE_ACCOUNTS_DIR`. Reads each session's
   own recorded working directory instead of decoding it back out of the encoded project directory

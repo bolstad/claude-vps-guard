@@ -9,6 +9,11 @@
 #   ccx <name>                -> session <name>   (several names = several parallel sessions)
 #   ccx <name> -a <account>   -> session <name>, logged in as <account>
 #   ccx <name> -r             -> session <name>, running 'claude --resume'
+#   ccx -c <session-id>       -> new session, auto-named and pointed at the
+#                                 right directory and account, continuing
+#                                 that one conversation ('ccx resumable'
+#                                 lists ids). Already active? Jumps straight
+#                                 to its tmux pane instead.
 #   ccx ls                    -> list Claude sessions with memory per session
 #   ccx resumable [N|all]     -> Claude Code conversations you can resume,
 #                                 across every account, newest first
@@ -29,6 +34,16 @@
 # Only takes effect when a new session is actually created; reattaching to a
 # session that is already running ignores it. 'ccx resumable' finds which
 # directory and account to run it from.
+#
+# -c/--continue <session-id>: the one-step version of the 'resumable' + '-a
+# ... -r' combo above. Looks up which directory and account that session id
+# belongs to (across every account), builds a new tmux session there with
+# 'claude --resume <session-id>' instead of a blank picker, and names it
+# after the target directory (deduped against whatever tmux sessions already
+# exist). If that session id already has a live process attached somewhere,
+# jumps straight to its tmux pane instead of starting a second, duplicate
+# conversation. An explicit name ('ccx <name> -c <id>') always reattaches to
+# an existing tmux session of that name first, same as -r and -a.
 #
 # Environment: CLAUDE_MEMORY_MAX (per-session cap, default 3G on Linux),
 #              CLAUDE_TMUX_SESSION (default session name),
@@ -51,10 +66,14 @@ GUARD_BIN_DIR="$(cd "$(dirname "$self")" && pwd)"
 # shellcheck source=../lib/common.sh
 . "$GUARD_BIN_DIR/../lib/common.sh"
 
+TAB="$(printf '\t')"
+
 ACCOUNT="${CLAUDE_ACCOUNT:-}"
+ACCOUNT_EXPLICIT=""
 SESSION=""
 RESUME=""
 EXTRA_ARG=""
+CONTINUE_ID=""
 while [ $# -gt 0 ]; do
     case "$1" in
         -h|--help)
@@ -67,14 +86,24 @@ while [ $# -gt 0 ]; do
             ;;
         -a|--account)
             ACCOUNT="${2:-}"
+            ACCOUNT_EXPLICIT=1
             shift 2
             ;;
         --account=*)
             ACCOUNT="${1#--account=}"
+            ACCOUNT_EXPLICIT=1
             shift
             ;;
         -r|--resume)
             RESUME=1
+            shift
+            ;;
+        -c|--continue)
+            CONTINUE_ID="${2:-}"
+            shift 2
+            ;;
+        --continue=*)
+            CONTINUE_ID="${1#--continue=}"
             shift
             ;;
         *)
@@ -90,15 +119,6 @@ while [ $# -gt 0 ]; do
             ;;
     esac
 done
-
-SESSION="${SESSION:-${CLAUDE_TMUX_SESSION:-claude}}"
-
-if [ -n "$ACCOUNT" ]; then
-    # CLAUDE_ACCOUNTS_DIR comes from common.sh (config file / env / default).
-    : "${CLAUDE_CONFIG_DIR:=$CLAUDE_ACCOUNTS_DIR/$ACCOUNT}"
-    export CLAUDE_CONFIG_DIR
-    mkdir -p "$CLAUDE_CONFIG_DIR"
-fi
 
 # Memory used by one tmux session. On Linux a capped session lives in its own
 # systemd scope, whose cgroup accounting is exact; everywhere else the process
@@ -178,22 +198,34 @@ list_resumable() {
     done
 }
 
+# Same rows as 'list_resumable', gathered across the default account and
+# every '-a' account under CLAUDE_ACCOUNTS_DIR.
+all_resumable_sessions() {
+    list_resumable "$HOME/.claude/projects" "-"
+    local acct_dir
+    for acct_dir in "$CLAUDE_ACCOUNTS_DIR"/*/; do
+        [ -d "$acct_dir/projects" ] || continue
+        list_resumable "$acct_dir/projects" "$(basename "$acct_dir")"
+    done
+}
+
 # A top-level string field out of a small single-line JSON object. Not a
 # general JSON parser - fine for the flat records Claude Code writes into
 # 'sessions/<pid>.json', which is the only shape these two ever see.
 json_str() { grep -o "\"$2\":\"[^\"]*\"" "$1" 2>/dev/null | head -1 | sed "s/^\"$2\":\"//; s/\"\$//"; }
 json_num() { grep -o "\"$2\":[0-9]*" "$1" 2>/dev/null | head -1 | cut -d: -f2; }
 
-# 'sessionId<TAB>name<TAB>status<TAB>pid', one line per session that
+# 'sessionId<TAB>name<TAB>status<TAB>pid<TAB>tmux', one line per session that
 # currently has a live CLI process attached, under a Claude Code config dir
 # ($1 = '~/.claude' or an account's directory). Claude Code writes a lock
 # file to 'sessions/<pid>.json' for the life of the process (status 'busy' or
-# 'idle', plus a name it derives for that run) but only cleans it up on its
-# *next* launch, not on exit - a crashed or kill -9'd process leaves its file
-# behind looking identical to a live one. The 'kill -0' check is what
-# actually tells 'active' from 'resumable'; the lock file alone does not.
+# 'idle', a name it derives for that run, and - when launched inside tmux -
+# the exact pane it is running in) but only cleans it up on its *next*
+# launch, not on exit - a crashed or kill -9'd process leaves its file behind
+# looking identical to a live one. The 'kill -0' check is what actually tells
+# 'active' from 'resumable'; the lock file alone does not.
 live_claude_sessions() {
-    local base="$1" f pid sid name status
+    local base="$1" f pid sid name status tmux_target
     for f in "$base"/sessions/*.json; do
         [ -e "$f" ] || continue
         pid="$(json_num "$f" pid)"
@@ -202,30 +234,29 @@ live_claude_sessions() {
         [ -n "$sid" ] || continue
         name="$(json_str "$f" name)"
         status="$(json_str "$f" status)"
-        printf '%s\t%s\t%s\t%s\n' "$sid" "${name:--}" "${status:--}" "$pid"
+        tmux_target="$(json_str "$f" tmux)"
+        printf '%s\t%s\t%s\t%s\t%s\n' "$sid" "${name:--}" "${status:--}" "$pid" "$tmux_target"
+    done
+}
+
+# Same rows as 'live_claude_sessions', gathered across the default account
+# and every '-a' account under CLAUDE_ACCOUNTS_DIR.
+all_live_claude_sessions() {
+    live_claude_sessions "$HOME/.claude"
+    local acct_dir
+    for acct_dir in "$CLAUDE_ACCOUNTS_DIR"/*/; do
+        [ -d "$acct_dir" ] || continue
+        live_claude_sessions "${acct_dir%/}"
     done
 }
 
 if [ "$SESSION" = "resumable" ]; then
     LIMIT="${EXTRA_ARG:-30}"
-    TAB="$(printf '\t')"
-
-    LIVE_SESSIONS="$(
-        live_claude_sessions "$HOME/.claude"
-        for acct_dir in "$CLAUDE_ACCOUNTS_DIR"/*/; do
-            [ -d "$acct_dir" ] || continue
-            live_claude_sessions "${acct_dir%/}"
-        done
-    )"
+    LIVE_SESSIONS="$(all_live_claude_sessions)"
 
     printf '%-17s %-12s %-14s %-20s %-38s %s\n' TIME ACCOUNT STATUS NAME SESSION PATH
-    {
-        list_resumable "$HOME/.claude/projects" "-"
-        for acct_dir in "$CLAUDE_ACCOUNTS_DIR"/*/; do
-            [ -d "$acct_dir/projects" ] || continue
-            list_resumable "$acct_dir/projects" "$(basename "$acct_dir")"
-        done
-    } | sort -t "$TAB" -k1,1rn \
+    all_resumable_sessions \
+      | sort -t "$TAB" -k1,1rn \
       | { [ "$LIMIT" = all ] && cat || head -n "$LIMIT"; } \
       | while IFS="$TAB" read -r mtime account id cwd; do
             hit="$(grep -m1 "^$id$TAB" <<<"$LIVE_SESSIONS")"
@@ -241,10 +272,67 @@ if [ "$SESSION" = "resumable" ]; then
     echo
     echo "'active (busy|idle)' already has a live process - reattach via 'ccx ls' / tmux, do not resume it again."
     echo "'resumable' is only on disk - pick it up with: cd <path> && ccx <name> -a <account> -r   ('-a' only for a non-'-' account)"
+    echo "Either way, 'ccx -c <session-id>' does it in one step."
     exit 0
 fi
 
 command -v tmux >/dev/null 2>&1 || { echo "tmux is not installed" >&2; exit 1; }
+
+# 'ccx -c <session-id>': resolve which directory and account that id belongs
+# to, or - if it is already running somewhere - jump straight to its tmux
+# pane instead of starting a duplicate conversation.
+FOUND_CWD=""
+if [ -n "$CONTINUE_ID" ]; then
+    live="$(all_live_claude_sessions | grep -m1 "^$CONTINUE_ID$TAB")"
+    if [ -n "$live" ]; then
+        pid="$(cut -d "$TAB" -f4 <<<"$live")"
+        tmux_target="$(cut -d "$TAB" -f5 <<<"$live")"
+        if [ -n "$tmux_target" ] && tmux has-session -t "$tmux_target" 2>/dev/null; then
+            exec tmux attach -t "$tmux_target"
+        fi
+        echo "session $CONTINUE_ID is already active (pid $pid) but not reachable through tmux." >&2
+        echo "find its terminal directly, e.g.: ps -p $pid -o pid,etime,command" >&2
+        exit 1
+    fi
+
+    found="$(all_resumable_sessions | grep -m1 "$TAB$CONTINUE_ID$TAB")"
+    if [ -z "$found" ]; then
+        echo "no Claude Code session found with id $CONTINUE_ID" >&2
+        echo "'ccx resumable all' lists every id ccx knows about" >&2
+        exit 1
+    fi
+    FOUND_ACCOUNT="$(cut -d "$TAB" -f2 <<<"$found")"
+    FOUND_CWD="$(cut -d "$TAB" -f4 <<<"$found")"
+    if [ -z "$ACCOUNT_EXPLICIT" ] && [ "$FOUND_ACCOUNT" != "-" ]; then
+        ACCOUNT="$FOUND_ACCOUNT"
+    fi
+
+    if [ -z "$SESSION" ]; then
+        # Name the new session after the target directory, so several '-c'
+        # calls in a row do not all pile into the same "claude" session.
+        # Substitution, not 'basename | tr': piping into tr carries
+        # basename's trailing newline along, which is outside the allowed
+        # set and turns into a spurious trailing '-' on every name.
+        base_name="$(basename "$FOUND_CWD")"
+        base_name="${base_name//[^A-Za-z0-9_-]/-}"
+        [ -n "$base_name" ] || base_name="claude"
+        SESSION="$base_name"
+        n=2
+        while tmux has-session -t "$SESSION" 2>/dev/null; do
+            SESSION="${base_name}-${n}"
+            n=$(( n + 1 ))
+        done
+    fi
+fi
+
+SESSION="${SESSION:-${CLAUDE_TMUX_SESSION:-claude}}"
+
+if [ -n "$ACCOUNT" ]; then
+    # CLAUDE_ACCOUNTS_DIR comes from common.sh (config file / env / default).
+    : "${CLAUDE_CONFIG_DIR:=$CLAUDE_ACCOUNTS_DIR/$ACCOUNT}"
+    export CLAUDE_CONFIG_DIR
+    mkdir -p "$CLAUDE_CONFIG_DIR"
+fi
 
 if tmux has-session -t "$SESSION" 2>/dev/null; then
     exec tmux attach -t "$SESSION"
@@ -259,12 +347,21 @@ fi
 # read the account back and later windows in the session start on it too.
 RESUME_ARG=""
 [ -n "$RESUME" ] && RESUME_ARG=" --resume"
+[ -n "$CONTINUE_ID" ] && RESUME_ARG=" --resume '$CONTINUE_ID'"
+
+# '-c' resolved a directory the target conversation actually ran in; hand it
+# to 'tmux new-session -c' so the pane starts there regardless of where this
+# command itself was invoked from.
+NEW_SESSION_ARGS=(-d -s "$SESSION")
+[ -n "$FOUND_CWD" ] && NEW_SESSION_ARGS+=(-c "$FOUND_CWD")
 
 if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
-    tmux new-session -d -s "$SESSION" \
+    tmux new-session "${NEW_SESSION_ARGS[@]}" \
         "exec env CLAUDE_CONFIG_DIR='$CLAUDE_CONFIG_DIR' '$GUARD_BIN_DIR/claude-guarded'$RESUME_ARG" || exit 1
     tmux set-environment -t "$SESSION" CLAUDE_CONFIG_DIR "$CLAUDE_CONFIG_DIR"
     exec tmux attach -t "$SESSION"
 fi
 
-exec tmux new-session -s "$SESSION" "exec '$GUARD_BIN_DIR/claude-guarded'$RESUME_ARG"
+FINAL_ARGS=(-s "$SESSION")
+[ -n "$FOUND_CWD" ] && FINAL_ARGS+=(-c "$FOUND_CWD")
+exec tmux new-session "${FINAL_ARGS[@]}" "exec '$GUARD_BIN_DIR/claude-guarded'$RESUME_ARG"
