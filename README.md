@@ -11,6 +11,8 @@ work.
 
 Works on Linux and macOS. Bash 3.2 compatible, so the stock macOS shell is enough.
 
+Longer write-up: [Built to survive the machine it runs on](docs/blog.html).
+
 ## What you get
 
 | Command | Purpose |
@@ -24,8 +26,8 @@ Works on Linux and macOS. Bash 3.2 compatible, so the stock macOS shell is enoug
 Two layers of protection:
 
 1. **Per-session cap.** On Linux each session runs in its own systemd scope with `MemoryMax`
-   (default 3G). A runaway session is OOM killed inside its own cgroup; the host and every other
-   session survive.
+   (default 3G) and swap disabled for that scope. A runaway session is OOM killed inside its own
+   cgroup instead of thrashing the host's swap first; the host and every other session survive.
 2. **Watchdog.** A user service samples memory every 10 seconds and `SIGSTOP`s the largest
    offender before the system reaches OOM. Freezing does not free RAM, but it stops the growth,
    and it is reversible: `claude-guard resume <pid>`.

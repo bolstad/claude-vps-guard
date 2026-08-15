@@ -19,6 +19,27 @@ Practical consequence: on macOS a runaway session keeps growing until the watchd
 `PROC_HARD_MB` or when available memory crosses `FLOOR_MB`. On a laptop with swap that is an
 inconvenience; on a small VPS the Linux cap is what prevents an outage.
 
+### Why swap is disabled inside the cap
+
+The scope is started with `-p MemorySwapMax=0` alongside `MemoryMax`, Linux only - there is no
+scope to add it to on macOS.
+
+Under cgroup v2, `MemoryMax` and swap usage are two separate limits (`memory.max` and
+`memory.swap.max`). Hitting `memory.max` does not fail a cgroup outright: the kernel's first move
+is reclaim, which includes pushing the cgroup's pages out to swap and letting it keep running. Only
+once reclaim is exhausted does the kernel OOM-kill something inside that cgroup. Leave swap
+available and a session at its limit doesn't die cleanly, it starts thrashing - every memory access
+can now cost a disk read, which is both a much worse failure mode for an interactive session (it
+looks hung, not crashed) and, because swap I/O is not itself contained by the cgroup, a way for one
+capped session to degrade every other process on the box while it does it. `MemorySwapMax=0` closes
+that path: reclaim has nothing left to try once `memory.max` is hit, so the kernel kills inside the
+cgroup immediately instead of thrashing first.
+
+It also keeps the watchdog's own swap-pressure rule (`SWAP_FLOOR_MB`, below) meaningful: a session
+free to consume most of the host's swap by itself could trip that floor and cause the watchdog to
+pause unrelated sessions to relieve pressure it created single-handedly. With swap off-limits per
+session, host swap stays a shared reserve instead of something any one capped process can exhaust.
+
 ## Available memory
 
 Linux reads `MemAvailable` from `/proc/meminfo`.

@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `docs/blog.html`: a longer write-up, "Built to survive the machine it runs on", covering the
+  problem, the two layers of protection, and the use cases the tool was actually built for. Linked
+  from the README; served as a static page by GitHub Pages alongside the README-as-index site.
+- `docs/platforms.md`: documented why the per-session cap disables swap (`MemorySwapMax=0`) rather
+  than just capping RAM - without it, hitting `MemoryMax` triggers reclaim-via-swap before any OOM
+  kill, which turns a contained memory limit into host-wide disk I/O contention while the session
+  thrashes, and can exhaust the swap headroom the watchdog's own `SWAP_FLOOR_MB` rule depends on.
 - `ccx -c`/`--continue <session-id>`: the one-step version of `ccx resumable` + `ccx <name> -a
   <account> -r`. Looks up which directory and account a specific session id belongs to (across
   every account, same lookup `resumable` uses) and builds a new tmux session there running `claude

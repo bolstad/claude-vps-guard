@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Built to survive the machine it runs on · claude-vps-guard</title>
+<meta name="description" content="A memory watchdog and persistent tmux wrapper for long-running Claude Code sessions, on Linux and macOS.">
+<style>
+  :root {
+    --bg: #eef1ef;
+    --surface: #ffffff;
+    --surface-2: #e4e8e5;
+    --ink: #1b1f22;
+    --ink-muted: #5b6469;
+    --ink-faint: #899296;
+    --line: #d3d9d5;
+    --line-strong: #b8c0bb;
+    --accent: #3f5278;
+    --accent-strong: #29354f;
+    --accent-tint: #e2e7f0;
+    --ok: #3f7d5c;
+    --ok-tint: #e2efe7;
+    --warn: #97671f;
+    --warn-tint: #f3e9d8;
+    --crit: #a83f2c;
+    --crit-tint: #f4e0da;
+    --shadow: 0 1px 2px rgba(20, 24, 26, 0.06), 0 8px 24px -12px rgba(20, 24, 26, 0.18);
+
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Fira Code", Menlo, Consolas, "Liberation Mono", monospace;
+    --serif: Charter, "Iowan Old Style", "Palatino Linotype", Georgia, "Times New Roman", serif;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14171b;
+      --surface: #1a1e23;
+      --surface-2: #20252b;
+      --ink: #e6e9e6;
+      --ink-muted: #9aa3a3;
+      --ink-faint: #6d777a;
+      --line: #2b3138;
+      --line-strong: #3a424a;
+      --accent: #93a6d6;
+      --accent-strong: #c1cdec;
+      --accent-tint: #232a3d;
+      --ok: #74c096;
+      --ok-tint: #1c2e26;
+      --warn: #e0ab5c;
+      --warn-tint: #332a19;
+      --crit: #e2836d;
+      --crit-tint: #362420;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px -12px rgba(0, 0, 0, 0.6);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #14171b;
+    --surface: #1a1e23;
+    --surface-2: #20252b;
+    --ink: #e6e9e6;
+    --ink-muted: #9aa3a3;
+    --ink-faint: #6d777a;
+    --line: #2b3138;
+    --line-strong: #3a424a;
+    --accent: #93a6d6;
+    --accent-strong: #c1cdec;
+    --accent-tint: #232a3d;
+    --ok: #74c096;
+    --ok-tint: #1c2e26;
+    --warn: #e0ab5c;
+    --warn-tint: #332a19;
+    --crit: #e2836d;
+    --crit-tint: #362420;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px -12px rgba(0, 0, 0, 0.6);
+  }
+
+  * { box-sizing: border-box; }
+
+  html { background: var(--bg); }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 17px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+  }
+
+  .page {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 3.5rem 1.5rem 6rem;
+  }
+
+  /* ---------- Type ---------- */
+
+  h1, h2, h3, .mono {
+    font-family: var(--mono);
+  }
+
+  .backlink {
+    margin: 0 0 2.4rem;
+  }
+  .backlink a {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--ink-faint);
+    letter-spacing: 0.02em;
+  }
+  .backlink a:hover { color: var(--accent); }
+
+  .kicker {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 1.1rem;
+  }
+
+  h1 {
+    font-size: clamp(2.1rem, 5vw, 3.05rem);
+    line-height: 1.1;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin: 0 0 1.2rem;
+    text-wrap: balance;
+    color: var(--ink);
+  }
+
+  .dek {
+    font-family: var(--serif);
+    font-size: 1.2rem;
+    line-height: 1.55;
+    color: var(--ink-muted);
+    max-width: 46ch;
+    margin: 0 0 2.6rem;
+    text-wrap: pretty;
+  }
+
+  h2.section-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0;
+    white-space: nowrap;
+  }
+
+  .section-head {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    margin: 4.4rem 0 1.6rem;
+  }
+  .section-head::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--line);
+  }
+
+  h3 {
+    font-size: 1.02rem;
+    font-weight: 700;
+    letter-spacing: -0.005em;
+    margin: 0;
+    color: var(--ink);
+  }
+
+  p { margin: 0 0 1.15rem; }
+  p:last-child { margin-bottom: 0; }
+
+  a { color: var(--accent); text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+  a:hover { text-decoration-color: var(--accent); }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.86em;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 0.1em 0.4em;
+  }
+
+  strong { font-weight: 700; }
+
+  /* ---------- Terminal chrome ---------- */
+
+  .term {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+
+  .term-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.6rem 0.8rem;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--line);
+  }
+  .term-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--line-strong); }
+  .term-title {
+    margin-left: 0.5rem;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--ink-faint);
+    letter-spacing: 0.02em;
+  }
+
+  .term-body {
+    font-family: var(--mono);
+    font-size: 0.76rem;
+    line-height: 1.7;
+    padding: 1rem 1.1rem 1.15rem;
+    overflow-x: auto;
+    white-space: pre;
+    color: var(--ink-muted);
+    tab-size: 2;
+  }
+  .term-body .cmd { color: var(--ink); font-weight: 600; }
+  .term-body .hdr { color: var(--ink-faint); }
+  .term-body .active { color: var(--ok); }
+  .term-body .resumable { color: var(--warn); }
+  .term-body .cursor {
+    display: inline-block;
+    width: 0.5em;
+    background: var(--accent);
+    animation: blink 1.1s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  pre.snippet {
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    line-height: 1.7;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 1rem 1.1rem;
+    overflow-x: auto;
+    color: var(--ink);
+    margin: 0 0 1.15rem;
+  }
+  pre.snippet .comment { color: var(--ink-faint); }
+
+  /* ---------- Layer diagram ---------- */
+
+  .layers {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin: 1.6rem 0 2rem;
+  }
+  @media (max-width: 620px) {
+    .layers { grid-template-columns: 1fr; }
+  }
+  .layer {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 1.2rem 1.3rem 1.35rem;
+    background: var(--surface);
+  }
+  .layer-eyebrow {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 0.5rem;
+  }
+  .layer h3 { margin-bottom: 0.55rem; }
+  .layer p { font-family: var(--serif); font-size: 0.96rem; color: var(--ink-muted); margin: 0; }
+  .layer p + p { margin-top: 0.7rem; }
+  .layer .tag {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.03em;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    margin-top: 0.9rem;
+  }
+  .layer.l1 .tag { background: var(--accent-tint); color: var(--accent-strong); }
+  .layer.l2 .tag { background: var(--warn-tint); color: var(--warn); }
+
+  /* ---------- Use case cards ---------- */
+
+  .case {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface);
+    margin-bottom: 1.1rem;
+    overflow: hidden;
+  }
+  .case-bar {
+    display: flex;
+    align-items: baseline;
+    gap: 0.7rem;
+    padding: 0.85rem 1.2rem;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--line);
+  }
+  .case-bar .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: none; }
+  .case-bar h3 { font-size: 0.98rem; }
+  .case-body { padding: 1.05rem 1.2rem 1.25rem; }
+  .case-body p { font-size: 0.98rem; color: var(--ink-muted); }
+  .case-body code { font-size: 0.82em; }
+
+  /* ---------- Footer / meta ---------- */
+
+  .closing {
+    margin-top: 4rem;
+    padding-top: 2rem;
+    border-top: 1px solid var(--line);
+  }
+  .closing .repo {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: var(--mono);
+    font-size: 0.9rem;
+    color: var(--ink);
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 0.5rem 0.85rem;
+    margin-top: 0.6rem;
+    text-decoration: none;
+  }
+  .closing .repo:hover { border-color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <p class="backlink"><a href="https://github.com/bolstad/claude-vps-guard">&larr; claude-vps-guard</a></p>
+
+  <p class="kicker">ccx &middot; claude-vps-guard</p>
+  <h1>Built to survive the machine it runs on</h1>
+  <p class="dek">A small toolkit that keeps long-running Claude Code sessions alive &mdash; through dropped connections, memory pressure, and reboots &mdash; on any Linux or macOS box you point it at.</p>
+
+  <div class="term" role="img" aria-label="Terminal showing the output of ccx resumable, listing recent Claude Code sessions with their status, account, and directory.">
+    <div class="term-bar">
+      <span class="term-dot"></span><span class="term-dot"></span><span class="term-dot"></span>
+      <span class="term-title">you@vps &mdash; 87&times;16</span>
+    </div>
+    <div class="term-body">$ <span class="cmd">ccx resumable 4</span>
+<span class="hdr">TIME              ACCOUNT      STATUS         NAME              SESSION                                PATH</span>
+2026-08-15 20:15  -            <span class="active">active (busy)</span>  api-refactor-9e   a1b2c3d4-e5f6-47a8-9b12-3c4d5e6f7a8b   ~/projects/api
+2026-08-15 19:40  acme          <span class="resumable">resumable</span>      -                 6c33e203-9115-43a9-95d0-95671555a9d7   ~/clients/acme-app
+2026-08-14 22:03  -            <span class="resumable">resumable</span>      -                 8c9e07a0-4c25-4221-a99f-73caef7544b5   ~/projects/api
+2026-08-13 09:12  work          <span class="active">active (idle)</span>  invoicing-7d      44b6663b-7fa9-406c-9559-e57fe093752d   ~/clients/northwind
+
+$ <span class="cmd">ccx -c 6c33e203-9115-43a9-95d0-95671555a9d7</span><span class="cursor">&nbsp;</span></div>
+  </div>
+
+  <div class="section-head"><h2 class="section-label">The problem</h2></div>
+
+  <p>A single Claude Code session can grow to several gigabytes over a long day of work. On a workstation with 32&nbsp;GB, that's noise. On a $5 VPS with one or two, it's the kernel's out-of-memory killer picking a victim more or less at random to free up room &mdash; and that victim is just as likely to be <code>sshd</code> or the web server sitting next to Claude as it is to be Claude itself. Lose the wrong one and you haven't just lost a conversation, you've lost the machine.</p>
+
+  <p>A second, unrelated problem: a session run over SSH lives and dies with that one terminal. Close the laptop lid, let the Wi-Fi hiccup, or get disconnected mid-response, and by default the process is simply gone &mdash; along with whatever it hadn't finished saying.</p>
+
+  <p><strong>claude-vps-guard</strong> exists to make neither of those things true.</p>
+
+  <div class="section-head"><h2 class="section-label">How it works</h2></div>
+
+  <p>It's three small, POSIX-ish shell scripts, each doing one job: <code>ccx</code> starts or reattaches to a named tmux session running Claude Code; <code>claude-memwatch</code> is a background watchdog that samples free memory; <code>claude-guard</code> inspects it and lets you see or release whatever it has paused. Together they put two independent layers between a session and the machine it's running on.</p>
+
+  <div class="layers">
+    <div class="layer l1">
+      <p class="layer-eyebrow">Layer 1</p>
+      <h3>The per-session cap</h3>
+      <p>On Linux, <code>ccx</code> starts Claude Code inside its own <code>systemd --user</code> scope with a hard <code>MemoryMax</code> &mdash; 3&nbsp;GB by default. A session that runs away gets OOM-killed <em>inside its own cgroup</em>. Nothing outside it even notices.</p>
+      <p>Swap is disabled for that scope alone. Without that, hitting the cap doesn't fail cleanly &mdash; the kernel tries to swap the session's pages out first, which turns a contained memory limit into a host-wide disk I/O problem that can stall every other process on the box while it thrashes. Disabled, the session gets a fast, contained kill instead of a slow, shared one. (<a href="https://github.com/bolstad/claude-vps-guard/blob/main/docs/platforms.md">more in docs/platforms.md</a>)</p>
+      <span class="tag">systemd scope &middot; Linux</span>
+    </div>
+    <div class="layer l2">
+      <p class="layer-eyebrow">Layer 2</p>
+      <h3>The watchdog</h3>
+      <p><code>claude-memwatch</code> samples available memory every 10 seconds and, before the system gets anywhere near real OOM, <code>SIGSTOP</code>s the single largest eligible process. Frozen, not killed &mdash; <code>claude-guard resume &lt;pid&gt;</code> brings it back once memory recovers.</p>
+      <span class="tag">watchdog &middot; Linux + macOS</span>
+    </div>
+  </div>
+
+  <p>Only a whitelist of process names can ever be paused &mdash; <code>claude</code>, <code>node</code>, <code>python</code>, a handful of others. <code>sshd</code>, <code>tmux</code>, and the shell itself are never candidates, so a struggling machine can never freeze you out of reaching it.</p>
+
+  <p>All of it runs inside tmux, which is what makes the rest possible: detach with <code>Ctrl-b d</code>, and <code>ccx &lt;name&gt;</code> reattaches. A dropped connection becomes a reattach instead of lost work.</p>
+
+  <div class="section-head"><h2 class="section-label">Where it earns its keep</h2></div>
+
+  <div class="case">
+    <div class="case-bar"><span class="dot"></span><h3>The two-gigabyte VPS</h3></div>
+    <div class="case-body">
+      <p>The default target: a small box that would happily run one focused Claude Code session all day, right up until it doesn't. <code>FLOOR_MB</code> and <code>CRIT_MB</code> give the watchdog room to react before the kernel has to; <code>PROC_HARD_MB</code> catches a single process ballooning even while the box overall still looks fine.</p>
+    </div>
+  </div>
+
+  <div class="case">
+    <div class="case-bar"><span class="dot"></span><h3>Several accounts, one box</h3></div>
+    <div class="case-body">
+      <p><code>-a &lt;account&gt;</code> points a session's Claude Code at its own config directory, so more than one Anthropic account stays logged in side by side &mdash; a freelancer or small agency running work for several clients without re-authenticating every time they switch. The account only has to be given once; it's remembered in that tmux session's own environment from then on.</p>
+    </div>
+  </div>
+
+  <div class="case">
+    <div class="case-bar"><span class="dot"></span><h3>The connection that drops</h3></div>
+    <div class="case-body">
+      <p>Flaky Wi-Fi, a laptop that sleeps, a VPN that hiccups mid-task &mdash; none of it touches a session that lives in tmux. <code>ccx &lt;name&gt;</code> reattaches exactly where the terminal left off, mid-response if that's where it was.</p>
+    </div>
+  </div>
+
+  <div class="case">
+    <div class="case-bar"><span class="dot"></span><h3>The reboot that takes tmux with it</h3></div>
+    <div class="case-body">
+      <p>A kernel update, a host migration, a power blip &mdash; the box comes back up and every tmux session is gone, along with any memory of which directory or account each one belonged to. Claude Code's own conversation history survives the reboot regardless. <code>ccx resumable</code> reads it back across every account and shows what's actually there, newest first, and whether it's genuinely waiting or already running somewhere else. <code>ccx -c &lt;session-id&gt;</code> skips the bookkeeping entirely &mdash; it finds the right directory and account itself, then either drops you into the pane already running it or rebuilds it from scratch.</p>
+    </div>
+  </div>
+
+  <div class="case">
+    <div class="case-bar"><span class="dot"></span><h3>Cron doesn't need any of this</h3></div>
+    <div class="case-body">
+      <p>A headless <code>claude -p</code> run from cron passes straight through, untouched &mdash; no cap, no watchdog, no tmux. This is protection for interactive sessions someone is actually sitting in front of, not a general-purpose process supervisor.</p>
+    </div>
+  </div>
+
+  <div class="section-head"><h2 class="section-label">Trying it</h2></div>
+
+  <pre class="snippet"><span class="comment"># clone, install, go</span>
+git clone https://github.com/bolstad/claude-vps-guard
+cd claude-vps-guard
+./install.sh
+ccx</pre>
+
+  <p>The installer copies the tools to <code>~/.local/share/claude-vps-guard</code>, links <code>ccx</code> and <code>claude-guard</code> onto your <code>PATH</code>, and registers the watchdog as a user service &mdash; <code>systemd --user</code> on Linux, <code>launchd</code> on macOS.</p>
+
+  <p>The two layers aren't symmetric across platforms: Linux gets the full treatment, cgroup cap and watchdog together. macOS has no per-process memory limit to hook into, so the watchdog is the only line of defense there &mdash; one layer instead of two, but a real one; it's what catches a runaway session before Activity Monitor would even flag it.</p>
+
+  <div class="closing">
+    <p>MIT-licensed, built for a handful of small VPS boxes that kept losing arguments with the OOM killer.</p>
+    <a class="repo" href="https://github.com/bolstad/claude-vps-guard">github.com/bolstad/claude-vps-guard</a>
+  </div>
+
+</div>
+</body>
+</html>
