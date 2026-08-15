@@ -8,6 +8,7 @@
 #   ccx                       -> session "claude"
 #   ccx <name>                -> session <name>   (several names = several parallel sessions)
 #   ccx <name> -a <account>   -> session <name>, logged in as <account>
+#   ccx <name> -r             -> session <name>, running 'claude --resume'
 #   ccx ls                    -> list Claude sessions with memory per session
 #   ccx --help                -> this text
 #
@@ -18,6 +19,13 @@
 # environment from then on, so a plain 'ccx <name>' reattaches with the same
 # account already in place. Set CLAUDE_CONFIG_DIR yourself beforehand to
 # override the directory for a single call.
+#
+# -r/--resume: build the same tmux session, memory cap and account as usual,
+# but hand Claude Code '--resume' instead of starting a blank conversation.
+# For picking up sessions that were still running when the machine rebooted -
+# the tmux sessions are gone, but Claude Code's own history on disk is not.
+# Only takes effect when a new session is actually created; reattaching to a
+# session that is already running ignores it.
 #
 # Environment: CLAUDE_MEMORY_MAX (per-session cap, default 3G on Linux),
 #              CLAUDE_TMUX_SESSION (default session name),
@@ -41,6 +49,7 @@ GUARD_BIN_DIR="$(cd "$(dirname "$self")" && pwd)"
 
 ACCOUNT="${CLAUDE_ACCOUNT:-}"
 SESSION=""
+RESUME=""
 while [ $# -gt 0 ]; do
     case "$1" in
         -h|--help)
@@ -57,6 +66,10 @@ while [ $# -gt 0 ]; do
             ;;
         --account=*)
             ACCOUNT="${1#--account=}"
+            shift
+            ;;
+        -r|--resume)
+            RESUME=1
             shift
             ;;
         *)
@@ -138,11 +151,14 @@ fi
 # tmux session running, -a was silently ignored. Hand it to the command
 # explicitly, and record it in the session's own environment so 'ccx ls' can
 # read the account back and later windows in the session start on it too.
+RESUME_ARG=""
+[ -n "$RESUME" ] && RESUME_ARG=" --resume"
+
 if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
     tmux new-session -d -s "$SESSION" \
-        "exec env CLAUDE_CONFIG_DIR='$CLAUDE_CONFIG_DIR' '$GUARD_BIN_DIR/claude-guarded'" || exit 1
+        "exec env CLAUDE_CONFIG_DIR='$CLAUDE_CONFIG_DIR' '$GUARD_BIN_DIR/claude-guarded'$RESUME_ARG" || exit 1
     tmux set-environment -t "$SESSION" CLAUDE_CONFIG_DIR "$CLAUDE_CONFIG_DIR"
     exec tmux attach -t "$SESSION"
 fi
 
-exec tmux new-session -s "$SESSION" "exec '$GUARD_BIN_DIR/claude-guarded'"
+exec tmux new-session -s "$SESSION" "exec '$GUARD_BIN_DIR/claude-guarded'$RESUME_ARG"

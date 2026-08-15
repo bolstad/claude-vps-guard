@@ -15,7 +15,7 @@ Works on Linux and macOS. Bash 3.2 compatible, so the stock macOS shell is enoug
 
 | Command | Purpose |
 | --- | --- |
-| `ccx` | Start or reattach to a named tmux session running Claude Code, memory capped where the platform allows it. `-a <account>` runs it under a separate, persistent login. |
+| `ccx` | Start or reattach to a named tmux session running Claude Code, memory capped where the platform allows it. `-a <account>` runs it under a separate, persistent login; `-r` resumes the previous conversation instead of starting a blank one. |
 | `ccx ls` | List Claude sessions with memory used per session. |
 | `claude-guard` | Inspect the watchdog, see and release paused processes, control the service. |
 
@@ -146,6 +146,19 @@ The account only needs to be given when a session is first created; it is stored
 session's own environment, so plain `ccx <name>` reattaches with the same account already active.
 Set `CLAUDE_CONFIG_DIR` yourself before calling `ccx` to point at an arbitrary directory instead,
 or `CLAUDE_ACCOUNTS_DIR` to change where per-account directories are created.
+
+### Resuming after a reboot
+
+A reboot kills every tmux session, but Claude Code's own conversation history on disk survives it.
+`ccx <name> -r` rebuilds the same session, memory cap and account as usual, but hands Claude Code
+`--resume` instead of starting a blank conversation:
+
+```sh
+ccx work -r          # new "work" session, running 'claude --resume'
+```
+
+`-r` only takes effect when a new tmux session is actually created; reattaching to a session that
+is still running ignores it, same as `-a`.
 
 ## Configuration
 

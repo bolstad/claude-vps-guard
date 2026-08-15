@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `ccx <name> -r`/`--resume`: build the same tmux session, memory cap and
+  account as usual, but hand Claude Code `--resume` instead of starting a
+  blank conversation. For picking sessions back up after a reboot wipes tmux
+  but leaves Claude Code's own conversation history on disk. Only takes
+  effect when a new session is actually created; reattaching to a session
+  that is still running ignores it, same as `-a`.
+
 ### Fixed
 
 - **`make install` built a stale copy of the installer instead of running it.**
