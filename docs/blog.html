@@ -361,12 +361,12 @@
     </div>
     <div class="term-body">$ <span class="cmd">ccx resumable 4</span>
 <span class="hdr">TIME              ACCOUNT      STATUS         NAME              SESSION                                PATH</span>
-2026-08-15 20:15  -            <span class="active">active (busy)</span>  api-refactor-9e   a1b2c3d4-e5f6-47a8-9b12-3c4d5e6f7a8b   ~/projects/api
-2026-08-15 19:40  acme          <span class="resumable">resumable</span>      -                 6c33e203-9115-43a9-95d0-95671555a9d7   ~/clients/acme-app
-2026-08-14 22:03  -            <span class="resumable">resumable</span>      -                 8c9e07a0-4c25-4221-a99f-73caef7544b5   ~/projects/api
-2026-08-13 09:12  work          <span class="active">active (idle)</span>  invoicing-7d      44b6663b-7fa9-406c-9559-e57fe093752d   ~/clients/northwind
+2026-08-15 20:15  -            <span class="active">active (busy)</span>  api-refactor-9e   840dc267-309e-48d0-af8f-ccb2fe9162fe   ~/projects/api
+2026-08-15 19:40  acme          <span class="resumable">resumable</span>      -                 9705a6b4-66ab-4a01-b6ea-0416556fafad   ~/clients/acme-app
+2026-08-14 22:03  -            <span class="resumable">resumable</span>      -                 d94966a7-2334-4574-9ba1-345e4292331b   ~/projects/api
+2026-08-13 09:12  work          <span class="active">active (idle)</span>  invoicing-7d      77acb355-d7da-47b2-af80-2cafb880f7ae   ~/clients/northwind
 
-$ <span class="cmd">ccx -c 6c33e203-9115-43a9-95d0-95671555a9d7</span><span class="cursor">&nbsp;</span></div>
+$ <span class="cmd">ccx -c 9705a6b4-66ab-4a01-b6ea-0416556fafad</span><span class="cursor">&nbsp;</span></div>
   </div>
 
   <div class="section-head"><h2 class="section-label">The problem</h2></div>
@@ -385,8 +385,8 @@ $ <span class="cmd">ccx -c 6c33e203-9115-43a9-95d0-95671555a9d7</span><span clas
     <div class="layer l1">
       <p class="layer-eyebrow">Layer 1</p>
       <h3>The per-session cap</h3>
-      <p>On Linux, <code>ccx</code> starts Claude Code inside its own <code>systemd --user</code> scope with a hard <code>MemoryMax</code> &mdash; 3&nbsp;GB by default. A session that runs away gets OOM-killed <em>inside its own cgroup</em>. Nothing outside it even notices.</p>
-      <p>Swap is disabled for that scope alone. Without that, hitting the cap doesn't fail cleanly &mdash; the kernel tries to swap the session's pages out first, which turns a contained memory limit into a host-wide disk I/O problem that can stall every other process on the box while it thrashes. Disabled, the session gets a fast, contained kill instead of a slow, shared one. (<a href="https://github.com/bolstad/claude-vps-guard/blob/main/docs/platforms.md">more in docs/platforms.md</a>)</p>
+      <p>On Linux, <code>ccx</code> starts Claude Code inside its own <code>systemd --user</code> scope with a hard <code>MemoryMax</code> (3&nbsp;GB by default). A session that runs away gets OOM-killed <em>inside its own cgroup</em>. Nothing outside it even notices.</p>
+      <p>Swap is disabled for that scope alone. Without that, hitting the cap doesn't fail cleanly &mdash; the kernel tries to swap the session's pages out first, which turns a contained memory limit into a host-wide disk I/O problem that can stall every other process on the box while it thrashes. Disabled, the session gets a fast, contained kill instead of a slow, shared one &mdash; <a href="https://github.com/bolstad/claude-vps-guard/blob/main/docs/platforms.md">more on why in docs/platforms.md</a>.</p>
       <span class="tag">systemd scope &middot; Linux</span>
     </div>
     <div class="layer l2">
@@ -434,7 +434,7 @@ $ <span class="cmd">ccx -c 6c33e203-9115-43a9-95d0-95671555a9d7</span><span clas
   <div class="section-head"><h2 class="section-label">Trying it</h2></div>
 
   <pre class="snippet"><span class="comment"># clone, install, go</span>
-git clone https://github.com/bolstad/claude-vps-guard
+git clone https://github.com/bolstad/claude-vps-guard.git
 cd claude-vps-guard
 ./install.sh
 ccx</pre>
