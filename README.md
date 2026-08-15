@@ -17,7 +17,7 @@ Works on Linux and macOS. Bash 3.2 compatible, so the stock macOS shell is enoug
 | --- | --- |
 | `ccx` | Start or reattach to a named tmux session running Claude Code, memory capped where the platform allows it. `-a <account>` runs it under a separate, persistent login; `-r` resumes the previous conversation instead of starting a blank one. |
 | `ccx ls` | List Claude sessions with memory used per session. |
-| `ccx resumable` | List Claude Code conversations you can resume, across every account, newest first. |
+| `ccx resumable` | List Claude Code conversations you can resume, across every account, newest first - flags which ones already have a live process attached. |
 | `claude-guard` | Inspect the watchdog, see and release paused processes, control the service. |
 
 Two layers of protection:
@@ -174,13 +174,25 @@ ccx resumable all   # everything
 ```
 
 ```
-TIME              ACCOUNT      SESSION                                PATH
-2026-08-15 19:51  -            f1c49de2-4654-45d8-aaaf-cb2baf940bff   /home/me/claude-vps-guard
-2026-08-15 19:51  atdt         44b6663b-7fa9-406c-9559-e57fe093752d   /home/me/some-project
+TIME              ACCOUNT      STATUS         NAME                 SESSION                                PATH
+2026-08-15 19:51  -            resumable      -                    f1c49de2-4654-45d8-aaaf-cb2baf940bff   /home/me/claude-vps-guard
+2026-08-15 19:51  atdt         active (busy)  some-project-7d      44b6663b-7fa9-406c-9559-e57fe093752d   /home/me/some-project
 ```
 
-`ACCOUNT` is `-` for the default account, matching the `ACCOUNT` column in `ccx ls`. Pick a row and
-resume it with:
+`ACCOUNT` is `-` for the default account, matching the `ACCOUNT` column in `ccx ls`.
+
+`STATUS` and `NAME` come from Claude Code's own `sessions/<pid>.json` lock file, which only exists
+for the life of a running process - so `NAME` (a name Claude Code derives when it starts) is only
+known while that process is up, and reads `-` for anything dormant on disk. A `pid` with a lock
+file is checked for being alive before it counts as `active`; a crashed or `kill -9`'d process
+leaves its lock file behind exactly like a live one, so the check is what actually tells the two
+apart, not just the file's presence:
+
+- **`active (busy|idle)`** already has a Claude Code process running - somewhere with a live PID,
+  possibly in a tmux pane `ccx` never created (or in one from before a rename). Reattach to it
+  rather than starting a second `--resume` of the same conversation; `ccx ls` finds the tmux side
+  of it if the pane is still around.
+- **`resumable`** exists only in Claude Code's history on disk. Pick a row and resume it with:
 
 ```sh
 cd /home/me/some-project

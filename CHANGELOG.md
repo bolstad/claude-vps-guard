@@ -15,7 +15,12 @@ All notable changes to this project are documented here. The format follows
   `/` into `-`). Pairs with `ccx <name> -a <account> -r`: this finds which directory and account a
   dropped session needs, that one rebuilds it. Solves the same problem as `-r` above, one level up -
   `-r` resumes a session once you already know where it lived; `resumable` is how you find that out
-  after a reboot wipes every tmux session at once.
+  after a reboot wipes every tmux session at once. Each row also reports `STATUS` and `NAME`,
+  cross-checked against Claude Code's own `sessions/<pid>.json` lock files: `active (busy|idle)`
+  when a live process still holds that conversation (a `kill -0` check on the recorded pid, since a
+  crashed process leaves its lock file behind looking identical to a running one), `resumable` when
+  it only exists on disk. `NAME` is the name Claude Code derives for a run and only exists while
+  that process is up, so it reads `-` for anything not currently active.
 - `ccx <name> -r`/`--resume`: build the same tmux session, memory cap and
   account as usual, but hand Claude Code `--resume` instead of starting a
   blank conversation. For picking sessions back up after a reboot wipes tmux

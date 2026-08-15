@@ -178,22 +178,69 @@ list_resumable() {
     done
 }
 
+# A top-level string field out of a small single-line JSON object. Not a
+# general JSON parser - fine for the flat records Claude Code writes into
+# 'sessions/<pid>.json', which is the only shape these two ever see.
+json_str() { grep -o "\"$2\":\"[^\"]*\"" "$1" 2>/dev/null | head -1 | sed "s/^\"$2\":\"//; s/\"\$//"; }
+json_num() { grep -o "\"$2\":[0-9]*" "$1" 2>/dev/null | head -1 | cut -d: -f2; }
+
+# 'sessionId<TAB>name<TAB>status<TAB>pid', one line per session that
+# currently has a live CLI process attached, under a Claude Code config dir
+# ($1 = '~/.claude' or an account's directory). Claude Code writes a lock
+# file to 'sessions/<pid>.json' for the life of the process (status 'busy' or
+# 'idle', plus a name it derives for that run) but only cleans it up on its
+# *next* launch, not on exit - a crashed or kill -9'd process leaves its file
+# behind looking identical to a live one. The 'kill -0' check is what
+# actually tells 'active' from 'resumable'; the lock file alone does not.
+live_claude_sessions() {
+    local base="$1" f pid sid name status
+    for f in "$base"/sessions/*.json; do
+        [ -e "$f" ] || continue
+        pid="$(json_num "$f" pid)"
+        [ -n "$pid" ] && pid_alive "$pid" || continue
+        sid="$(json_str "$f" sessionId)"
+        [ -n "$sid" ] || continue
+        name="$(json_str "$f" name)"
+        status="$(json_str "$f" status)"
+        printf '%s\t%s\t%s\t%s\n' "$sid" "${name:--}" "${status:--}" "$pid"
+    done
+}
+
 if [ "$SESSION" = "resumable" ]; then
     LIMIT="${EXTRA_ARG:-30}"
-    printf '%-17s %-12s %-38s %s\n' TIME ACCOUNT SESSION PATH
+    TAB="$(printf '\t')"
+
+    LIVE_SESSIONS="$(
+        live_claude_sessions "$HOME/.claude"
+        for acct_dir in "$CLAUDE_ACCOUNTS_DIR"/*/; do
+            [ -d "$acct_dir" ] || continue
+            live_claude_sessions "${acct_dir%/}"
+        done
+    )"
+
+    printf '%-17s %-12s %-14s %-20s %-38s %s\n' TIME ACCOUNT STATUS NAME SESSION PATH
     {
         list_resumable "$HOME/.claude/projects" "-"
         for acct_dir in "$CLAUDE_ACCOUNTS_DIR"/*/; do
             [ -d "$acct_dir/projects" ] || continue
             list_resumable "$acct_dir/projects" "$(basename "$acct_dir")"
         done
-    } | sort -t "$(printf '\t')" -k1,1rn \
+    } | sort -t "$TAB" -k1,1rn \
       | { [ "$LIMIT" = all ] && cat || head -n "$LIMIT"; } \
-      | while IFS="$(printf '\t')" read -r mtime account id cwd; do
-            printf '%-17s %-12s %-38s %s\n' "$(epoch_to_human "$mtime")" "$account" "$id" "$cwd"
+      | while IFS="$TAB" read -r mtime account id cwd; do
+            hit="$(grep -m1 "^$id$TAB" <<<"$LIVE_SESSIONS")"
+            if [ -n "$hit" ]; then
+                name="$(cut -d "$TAB" -f2 <<<"$hit")"
+                status="active ($(cut -d "$TAB" -f3 <<<"$hit"))"
+            else
+                name="-"
+                status="resumable"
+            fi
+            printf '%-17s %-12s %-14s %-20s %-38s %s\n' "$(epoch_to_human "$mtime")" "$account" "$status" "$name" "$id" "$cwd"
         done
     echo
-    echo "Resume one with: cd <path> && ccx <name> -a <account> -r   ('-a' only for a non-'-' account)"
+    echo "'active (busy|idle)' already has a live process - reattach via 'ccx ls' / tmux, do not resume it again."
+    echo "'resumable' is only on disk - pick it up with: cd <path> && ccx <name> -a <account> -r   ('-a' only for a non-'-' account)"
     exit 0
 fi
 
