@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-10-16
+
 ### Fixed
 
 - The directory probe behind `ccx doctor` and the pre-flight check before creating a session put the
@@ -178,4 +180,5 @@ First tagged release. Everything below was developed between 2026-07-18 and
 
 [1.0.0]: https://github.com/bolstad/claude-vps-guard/releases/tag/v1.0.0
 [1.1.0]: https://github.com/bolstad/claude-vps-guard/releases/tag/v1.1.0
-[Unreleased]: https://github.com/bolstad/claude-vps-guard/compare/v1.1.0...HEAD
+[1.1.1]: https://github.com/bolstad/claude-vps-guard/compare/v1.1.0...v1.1.1
+[Unreleased]: https://github.com/bolstad/claude-vps-guard/compare/v1.1.1...HEAD
