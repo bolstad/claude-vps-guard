@@ -14,6 +14,10 @@ All notable changes to this project are documented here. The format follows
   and the stray quote was interpreted by the shell. The path is now quoted properly. `sq()`, the
   quoting helper, is written so that it also works on the bash 3.2 that ships with macOS, which
   mangles the backslashes of the usual inline form.
+- The same probe passes the command through `tmux run-shell`, which expands tmux formats in its
+  argument, so a `#(command)` in a directory name was run by tmux itself. `#` is now escaped as
+  `##` (tmux's own escape for a literal `#`). `new-session -c` and `-s` do not run commands from
+  formats and needed no change.
 
 ## [1.1.0] - 2026-10-16
 

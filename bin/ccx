@@ -126,9 +126,12 @@ session_socket() {
 # (ls -d) through even without access, opendir it does not.
 # rc 0 = ok, or no server yet (a new server inherits our own access).
 server_can_read() {
-    local sock="$1" dir="$2"
+    local sock="$1" dir="$2" cmd h="#" hh="##"
     tmx "$sock" has-session 2>/dev/null || return 0
-    tmx "$sock" run-shell "ls $(sq "$dir") >/dev/null 2>&1" >/dev/null 2>&1
+    # run-shell expands tmux formats in its argument, so a '#(cmd)' in the path
+    # would be run by tmux itself; '##' is tmux's escape for a literal '#'.
+    cmd="ls $(sq "$dir") >/dev/null 2>&1"
+    tmx "$sock" run-shell "${cmd//$h/$hh}" >/dev/null 2>&1
 }
 
 # Error message that replaces Claude Code's misleading fd error. In a terminal we
