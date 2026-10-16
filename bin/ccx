@@ -101,6 +101,11 @@ CCX_SOCKET="${CCX_TMUX_SOCKET:-ccx}"
 LEGACY_SOCKET="${CCX_LEGACY_SOCKET:-default}"
 TMUX_CMD=(tmux -L "$CCX_SOCKET")
 
+# Quote a value for a shell command line (tmux run-shell, the line Ghostty runs).
+# Pattern and replacement live in variables because bash 3.2 (stock macOS)
+# mangles the backslashes if they are written inline in ${var//.../...}.
+sq() { local q="'" r="'\\''"; printf "'%s'" "${1//$q/$r}"; }
+
 # tmx <socket> <tmux-args...>: run tmux against a named server.
 tmx() {
     local sock="$1"; shift
@@ -123,7 +128,7 @@ session_socket() {
 server_can_read() {
     local sock="$1" dir="$2"
     tmx "$sock" has-session 2>/dev/null || return 0
-    tmx "$sock" run-shell "ls '$dir' >/dev/null 2>&1" >/dev/null 2>&1
+    tmx "$sock" run-shell "ls $(sq "$dir") >/dev/null 2>&1" >/dev/null 2>&1
 }
 
 # Error message that replaces Claude Code's misleading fd error. In a terminal we
@@ -385,9 +390,6 @@ command -v tmux >/dev/null 2>&1 || { echo "tmux is not installed" >&2; exit 1; }
 MANIFEST="$GUARD_STATE_DIR/ccx-sessions.tsv"
 # Absolute, because the windows Ghostty opens start in another directory.
 CCX_SELF="$GUARD_BIN_DIR/$(basename "$self")"
-
-# Quote a value for the shell line Ghostty runs.
-sq() { printf "'%s'" "${1//\'/\'\\\'\'}"; }
 
 cmd_save() {
     mkdir -p "$GUARD_STATE_DIR"

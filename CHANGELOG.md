@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The directory probe behind `ccx doctor` and the pre-flight check before creating a session put the
+  path inside single quotes in a shell command, so a directory with an apostrophe in its name (or
+  anything else a quote can break out of) was reported as "NO ACCESS" even though it was readable,
+  and the stray quote was interpreted by the shell. The path is now quoted properly. `sq()`, the
+  quoting helper, is written so that it also works on the bash 3.2 that ships with macOS, which
+  mangles the backslashes of the usual inline form.
+
 ## [1.1.0] - 2026-10-16
 
 ### Added
