@@ -14,6 +14,20 @@
 #                                 that one conversation ('ccx resumable'
 #                                 lists ids). Already active? Jumps straight
 #                                 to its tmux pane instead.
+#   ccx up [--windows] [-n]   -> open ALL sessions in one sweep: one tab per session
+#                                 in a new Ghostty window (--windows = a window per
+#                                 session, CCX_OPEN_MODE=windows to make that the
+#                                 default, -n = only show what would be done). If the
+#                                 tmux session exists the tab attaches to it; otherwise
+#                                 it is recreated with 'claude --resume <id>'. Sessions
+#                                 that are already open are skipped.
+#   ccx up --from <file>      -> like 'up', but with a frozen list (a save job rewrites
+#                                 the default list every minute)
+#   ccx save [file]           -> save the session list (name, account, directory, id)
+#                                 to <file>, default ~/.cache/claude-vps-guard/ccx-sessions.tsv.
+#                                 A file of your own is never rewritten by a save job, so
+#                                 save one before ending sessions on purpose.
+#   ccx doctor [directory]    -> can the tmux server read the directory? (macOS access)
 #   ccx ls                    -> list Claude sessions with memory per session
 #   ccx resumable [N|all]     -> Claude Code conversations you can resume,
 #                                 across every account, newest first
@@ -49,8 +63,14 @@
 #              CLAUDE_TMUX_SESSION (default session name),
 #              CLAUDE_ACCOUNT (default account), CLAUDE_ACCOUNTS_DIR
 #              (default ~/.claude-accounts).
-# ("ls", "resumable" and --help are reserved and cannot be used as session
-#  names. A bare 'help' is not reserved, so it still starts a session called
+# Own tmux server: ccx uses the socket "ccx" (CCX_TMUX_SOCKET), not the shared
+# default server. An orphaned default server can lose macOS access to external
+# disks, and every new session then crashes with a misleading "low max file
+# descriptors". Old sessions on the default server still show up in 'ccx ls' and
+# are attached by 'ccx <name>' and 'ccx up'.
+#
+# ("ls", "resumable", "up", "open", "save", "doctor" and --help are reserved and
+#  cannot be used as session names. A bare 'help' is not reserved, so it still starts a session called
 #  "help".)
 set -u
 
@@ -68,12 +88,62 @@ GUARD_BIN_DIR="$(cd "$(dirname "$self")" && pwd)"
 
 TAB="$(printf '\t')"
 
+# Windows that Ghostty opens through AppleScript, and launchd jobs, get a minimal
+# PATH without tmux and claude, so set it explicitly.
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
+
+# ccx owns its tmux server (socket "ccx"). A shared default server inherits the
+# permission (macOS TCC, e.g. removable volumes) its starting process had, and an
+# orphaned server can lose it: every new session then crashes with a misleading
+# "low max file descriptors". "default" is the old shared server; it is still
+# read so that existing sessions stay visible.
+CCX_SOCKET="${CCX_TMUX_SOCKET:-ccx}"
+LEGACY_SOCKET="${CCX_LEGACY_SOCKET:-default}"
+TMUX_CMD=(tmux -L "$CCX_SOCKET")
+
+# tmx <socket> <tmux-args...>: run tmux against a named server.
+tmx() {
+    local sock="$1"; shift
+    if [ "$sock" = default ]; then tmux "$@"; else tmux -L "$sock" "$@"; fi
+}
+
+# Which server has the session? Prints the socket name, otherwise returns 1.
+session_socket() {
+    local sock
+    for sock in "$CCX_SOCKET" "$LEGACY_SOCKET"; do
+        if tmx "$sock" has-session -t "=$1" 2>/dev/null; then echo "$sock"; return 0; fi
+    done
+    return 1
+}
+
+# Can the tmux server (and so every session it starts) READ directory $2?
+# Measures the server, not this shell. It has to be a read: macOS lets stat
+# (ls -d) through even without access, opendir it does not.
+# rc 0 = ok, or no server yet (a new server inherits our own access).
+server_can_read() {
+    local sock="$1" dir="$2"
+    tmx "$sock" has-session 2>/dev/null || return 0
+    tmx "$sock" run-shell "ls '$dir' >/dev/null 2>&1" >/dev/null 2>&1
+}
+
+# Error message that replaces Claude Code's misleading fd error. In a terminal we
+# wait for Enter so the window does not vanish before the error has been read.
+die_wait() {
+    printf '%s\n' "$@" >&2
+    if [ -t 0 ]; then printf 'Press Enter to close. ' >&2; read -r _ || true; fi
+    exit 1
+}
+
 ACCOUNT="${CLAUDE_ACCOUNT:-}"
 ACCOUNT_EXPLICIT=""
 SESSION=""
 RESUME=""
 EXTRA_ARG=""
+EXTRA_ARG2=""
 CONTINUE_ID=""
+OPEN_MODE="${CCX_OPEN_MODE:-tabs}"
+DRY_RUN_UP=""
+MANIFEST_FROM=""
 while [ $# -gt 0 ]; do
     case "$1" in
         -h|--help)
@@ -106,6 +176,22 @@ while [ $# -gt 0 ]; do
             CONTINUE_ID="${1#--continue=}"
             shift
             ;;
+        --from)
+            MANIFEST_FROM="${2:-}"
+            shift 2
+            ;;
+        -n|--dry-run)
+            DRY_RUN_UP=1
+            shift
+            ;;
+        --tabs)
+            OPEN_MODE=tabs
+            shift
+            ;;
+        --windows)
+            OPEN_MODE=windows
+            shift
+            ;;
         *)
             if [ -z "$SESSION" ]; then
                 SESSION="$1"
@@ -114,6 +200,8 @@ while [ $# -gt 0 ]; do
                 # name never reaches this branch since one positional is all
                 # 'ccx <name>' takes.
                 EXTRA_ARG="$1"
+            elif [ -z "$EXTRA_ARG2" ]; then
+                EXTRA_ARG2="$1"   # only for 'ccx _attach <socket> <session>'
             fi
             shift
             ;;
@@ -143,7 +231,7 @@ session_memory_mb() {
                 total=$(( total + $(rss_tree_kb "$pane") * 1024 ))
                 ;;
         esac
-    done < <(tmux list-panes -s -t "$name" -F '#{pane_pid}' 2>/dev/null)
+    done < <("${TMUX_CMD[@]}" list-panes -s -t "$name" -F '#{pane_pid}' 2>/dev/null)
     echo $(( total / 1024 / 1024 ))
 }
 
@@ -152,7 +240,7 @@ session_memory_mb() {
 # reattaching too). "-" when the session used the default account.
 session_account() {
     local line
-    line="$(tmux show-environment -t "$1" CLAUDE_CONFIG_DIR 2>/dev/null)"
+    line="$("${TMUX_CMD[@]}" show-environment -t "$1" CLAUDE_CONFIG_DIR 2>/dev/null)"
     case "$line" in
         CLAUDE_CONFIG_DIR=*) basename "${line#CLAUDE_CONFIG_DIR=}" ;;
         *) echo "-" ;;
@@ -161,12 +249,19 @@ session_account() {
 
 if [ "$SESSION" = "ls" ]; then
     command -v tmux >/dev/null 2>&1 || { echo "tmux is not installed" >&2; exit 1; }
-    if ! tmux ls >/dev/null 2>&1; then echo "(no tmux sessions)"; exit 0; fi
-    printf '%-24s %-9s %-8s %-14s %s\n' SESSION MEMORY WINDOWS ACCOUNT CREATED
-    tmux list-sessions -F '#{session_name}|#{session_windows}|#{t:session_created}' 2>/dev/null \
-    | while IFS='|' read -r name windows created; do
-        printf '%-24s %-9s %-8s %-14s %s\n' "$name" "$(session_memory_mb "$name") MB" "$windows" "$(session_account "$name")" "$created"
+    shown=""
+    for sock in "$CCX_SOCKET" "$LEGACY_SOCKET"; do
+        tmx "$sock" ls >/dev/null 2>&1 || continue
+        [ -z "$shown" ] && printf '%-24s %-9s %-8s %-14s %-9s %s\n' SESSION MEMORY WINDOWS ACCOUNT SERVER CREATED
+        shown=1
+        TMUX_CMD=(tmux -L "$sock"); [ "$sock" = default ] && TMUX_CMD=(tmux)
+        tmux_list="$("${TMUX_CMD[@]}" list-sessions -F '#{session_name}|#{session_windows}|#{t:session_created}' 2>/dev/null)"
+        while IFS='|' read -r name windows created; do
+            [ -n "$name" ] || continue
+            printf '%-24s %-9s %-8s %-14s %-9s %s\n' "$name" "$(session_memory_mb "$name") MB" "$windows" "$(session_account "$name")" "$sock" "$created"
+        done <<<"$tmux_list"
     done
+    [ -n "$shown" ] || echo "(no tmux sessions)"
     exit 0
 fi
 
@@ -278,6 +373,185 @@ fi
 
 command -v tmux >/dev/null 2>&1 || { echo "tmux is not installed" >&2; exit 1; }
 
+# --- recovery: save the session list, open everything in one sweep ----------------
+#
+# The tmux sessions survive Ghostty dying; what is missing is attaching to them
+# again. 'ccx save' writes a list (name, account, directory, Claude session id)
+# and 'ccx up' opens a Ghostty tab or window per session: if the tmux session
+# exists the window attaches, otherwise it is recreated with 'claude --resume
+# <id>'. Every window runs 'ccx <name> -c <id>' itself, so a new tmux server is
+# born INSIDE Ghostty and inherits its access to external disks.
+
+MANIFEST="$GUARD_STATE_DIR/ccx-sessions.tsv"
+# Absolute, because the windows Ghostty opens start in another directory.
+CCX_SELF="$GUARD_BIN_DIR/$(basename "$self")"
+
+# Quote a value for the shell line Ghostty runs.
+sq() { printf "'%s'" "${1//\'/\'\\\'\'}"; }
+
+cmd_save() {
+    mkdir -p "$GUARD_STATE_DIR"
+    local live sock names name acct cwd sid seen="" rows="" tmp
+    live="$(all_live_claude_sessions)"
+    for sock in "$CCX_SOCKET" "$LEGACY_SOCKET"; do
+        names="$(tmx "$sock" list-sessions -F '#{session_name}' 2>/dev/null)" || continue
+        TMUX_CMD=(tmux -L "$sock"); [ "$sock" = default ] && TMUX_CMD=(tmux)
+        while IFS= read -r name; do
+            [ -n "$name" ] || continue
+            case "$seen" in *"|$name|"*) continue ;; esac
+            seen="$seen|$name|"
+            acct="$(session_account "$name")"
+            cwd="$(tmx "$sock" display-message -p -t "=$name:" '#{pane_current_path}' 2>/dev/null)"
+            sid="$(awk -F'\t' -v n="$name" 'index($5, n ":") == 1 { print $1; exit }' <<<"$live")"
+            rows="${rows}${name}${TAB}${acct}${TAB}${cwd}${TAB}${sid:--}${TAB}$(date +%s)"$'\n'
+        done <<<"$names"
+    done
+    # No tmux server at all (crashed, rebooted): keep the last list, it is exactly
+    # what is needed to recreate the sessions. While a server lives the whole
+    # list is rewritten, so a session ended with /exit drops out at the next save.
+    if [ -z "$rows" ]; then
+        [ -n "${CCX_VERBOSE:-}" ] && echo "no sessions running, keeping $MANIFEST" >&2
+        return 0
+    fi
+    tmp="$MANIFEST.tmp.$$"
+    printf '%s' "$rows" > "$tmp"
+    if [ -f "$MANIFEST" ] && ! cmp -s "$tmp" "$MANIFEST"; then
+        # Identical apart from the timestamp still counts as a change; it is cheap.
+        cp "$MANIFEST" "$MANIFEST.prev"
+    fi
+    mv "$tmp" "$MANIFEST"
+    [ -n "${CCX_VERBOSE:-}" ] && echo "saved $(printf '%s' "$rows" | grep -c .) sessions to $MANIFEST" >&2
+    return 0
+}
+
+ghostty_script() { osascript - "$@" 2>/dev/null; }
+
+ghostty_wait_ready() {
+    local i
+    for i in $(seq 1 40); do
+        [ "$(osascript -e 'tell application "Ghostty" to count windows' 2>/dev/null || echo 0)" -ge 1 ] 2>/dev/null && return 0
+        sleep 0.5
+    done
+    return 1
+}
+
+# Open the window with your normal shell and send "exec <command>" as initial
+# input. A 'command' in the surface configuration leaves a ghost window behind
+# once the process ends; with exec the shell is replaced and the window closes
+# as usual. Prints the id of the new window.
+ghostty_open() { # $1 = command, $2 = directory, $3 = tabs|windows, $4 = window id for tabs
+    if [ "$3" = tabs ] && [ -n "${4:-}" ]; then
+        ghostty_script "$1" "$2" "$4" <<'AS'
+on run argv
+    tell application "Ghostty"
+        set cfg to new surface configuration
+        set initial input of cfg to ("exec " & (item 1 of argv) & linefeed)
+        set initial working directory of cfg to item 2 of argv
+        new tab in window id (item 3 of argv) with configuration cfg
+        return item 3 of argv
+    end tell
+end run
+AS
+    else
+        ghostty_script "$1" "$2" <<'AS'
+on run argv
+    tell application "Ghostty"
+        set cfg to new surface configuration
+        set initial input of cfg to ("exec " & (item 1 of argv) & linefeed)
+        set initial working directory of cfg to item 2 of argv
+        set w to new window with configuration cfg
+        return id of w
+    end tell
+end run
+AS
+    fi
+}
+
+cmd_up() {
+    local name acct cwd sid saved sock att cmd win="" initial="" opened=0 skipped=0 failed=0 started=""
+    # --from <file>: use a frozen list instead of the one the save job rewrites
+    # every minute (for example after you ended sessions with /exit).
+    if [ -n "$MANIFEST_FROM" ]; then
+        [ -s "$MANIFEST_FROM" ] || { echo "The list $MANIFEST_FROM is missing or empty." >&2; exit 1; }
+        MANIFEST="$MANIFEST_FROM"
+    else
+        cmd_save
+    fi
+    [ -s "$MANIFEST" ] || { echo "No session list to open ($MANIFEST is missing or empty)." >&2; exit 1; }
+
+    if [ -z "$DRY_RUN_UP" ] && ! pgrep -xq ghostty; then
+        open -a Ghostty || { echo "Could not start Ghostty." >&2; exit 1; }
+        started=1
+    fi
+    [ -n "$DRY_RUN_UP" ] || ghostty_wait_ready || { echo "Ghostty does not answer AppleScript (Automation permission?)." >&2; exit 1; }
+    # If we started Ghostty it opens an empty default window; we close that last.
+    [ -n "$started" ] && [ -z "$DRY_RUN_UP" ] && initial="$(osascript -e 'tell application "Ghostty" to id of front window' 2>/dev/null)"
+
+    while IFS="$TAB" read -r name acct cwd sid saved; do
+        [ -n "$name" ] || continue
+        if sock="$(session_socket "$name")"; then
+            att="$(tmx "$sock" display-message -p -t "=$name:" '#{session_attached}' 2>/dev/null || echo 0)"
+            if [ "${att:-0}" -gt 0 ] 2>/dev/null; then
+                echo "  =  $name  (already open)"; skipped=$((skipped + 1)); continue
+            fi
+            cmd="$(sq "$CCX_SELF") _attach $(sq "$sock") $(sq "$name")"
+            echo "  ↻  $name  (kopplar in)"
+        else
+            if ! ls "$cwd" >/dev/null 2>&1; then
+                echo "  !  $name  directory not reachable: $cwd" >&2; failed=$((failed + 1)); continue
+            fi
+            cmd="$(sq "$CCX_SELF") $(sq "$name")"
+            [ "$acct" != "-" ] && cmd="$cmd -a $(sq "$acct")"
+            [ "$sid" != "-" ] && cmd="$cmd -c $(sq "$sid")"
+            if [ "$sid" != "-" ]; then echo "  +  $name  (recreating, id ${sid:0:8}…)"; else echo "  +  $name  (recreating without id, new conversation)"; fi
+        fi
+        if [ -n "$DRY_RUN_UP" ]; then
+            echo "       [dry-run] $cmd   (cwd $cwd)"; opened=$((opened + 1)); continue
+        fi
+        if out="$(ghostty_open "$cmd" "$cwd" "$OPEN_MODE" "$win")" && [ -n "$out" ]; then
+            [ "$OPEN_MODE" = tabs ] && win="$out"
+            opened=$((opened + 1))
+        else
+            echo "  !  $name  Ghostty could not open the window" >&2; failed=$((failed + 1))
+        fi
+        sleep 1.5   # stagger the startups, a dozen Claude processes at once is needlessly heavy
+    done < "$MANIFEST"
+
+    if [ -n "$initial" ] && [ "$opened" -gt 0 ]; then
+        osascript -e "tell application \"Ghostty\" to close window (window id \"$initial\")" >/dev/null 2>&1 || true
+    fi
+    echo "done: $opened opened, $skipped already open, $failed failed"
+    [ "$failed" -eq 0 ]
+}
+
+cmd_doctor() {
+    local dir="${1:-$PWD}" sock rc=0
+    echo "directory: $dir"
+    for sock in "$CCX_SOCKET" "$LEGACY_SOCKET"; do
+        if ! tmx "$sock" has-session 2>/dev/null; then echo "  server '$sock': no server running"; continue; fi
+        if server_can_read "$sock" "$dir"; then
+            echo "  server '$sock': OK, can read the directory"
+        else
+            echo "  server '$sock': NO ACCESS (new sessions here crash with 'low max file descriptors')"
+            rc=1
+        fi
+    done
+    [ "$rc" -eq 0 ] || echo "Fix: save the list ('ccx save'), end the sessions with /exit, then run 'ccx up' from Ghostty."
+    return "$rc"
+}
+
+case "$SESSION" in
+    save)   [ -n "$EXTRA_ARG" ] && MANIFEST="$EXTRA_ARG"   # 'ccx save <file>': a list of your own
+            [ -t 2 ] && CCX_VERBOSE=1; cmd_save; exit $? ;;
+    up|open) cmd_up; exit $? ;;
+    doctor) cmd_doctor "${EXTRA_ARG:-$PWD}"; exit $? ;;
+    _attach)
+        # intern: ccx _attach <socket> <session>
+        if [ "$EXTRA_ARG" = default ]; then exec tmux attach -t "=$EXTRA_ARG2"; fi
+        exec tmux -L "$EXTRA_ARG" attach -t "=$EXTRA_ARG2"
+        ;;
+esac
+
 # 'ccx -c <session-id>': resolve which directory and account that id belongs
 # to, or - if it is already running somewhere - jump straight to its tmux
 # pane instead of starting a duplicate conversation.
@@ -287,8 +561,8 @@ if [ -n "$CONTINUE_ID" ]; then
     if [ -n "$live" ]; then
         pid="$(cut -d "$TAB" -f4 <<<"$live")"
         tmux_target="$(cut -d "$TAB" -f5 <<<"$live")"
-        if [ -n "$tmux_target" ] && tmux has-session -t "$tmux_target" 2>/dev/null; then
-            exec tmux attach -t "$tmux_target"
+        if [ -n "$tmux_target" ] && "${TMUX_CMD[@]}" has-session -t "$tmux_target" 2>/dev/null; then
+            exec "${TMUX_CMD[@]}" attach -t "$tmux_target"
         fi
         echo "session $CONTINUE_ID is already active (pid $pid) but not reachable through tmux." >&2
         echo "find its terminal directly, e.g.: ps -p $pid -o pid,etime,command" >&2
@@ -318,7 +592,7 @@ if [ -n "$CONTINUE_ID" ]; then
         [ -n "$base_name" ] || base_name="claude"
         SESSION="$base_name"
         n=2
-        while tmux has-session -t "$SESSION" 2>/dev/null; do
+        while "${TMUX_CMD[@]}" has-session -t "$SESSION" 2>/dev/null; do
             SESSION="${base_name}-${n}"
             n=$(( n + 1 ))
         done
@@ -334,8 +608,21 @@ if [ -n "$ACCOUNT" ]; then
     mkdir -p "$CLAUDE_CONFIG_DIR"
 fi
 
-if tmux has-session -t "$SESSION" 2>/dev/null; then
-    exec tmux attach -t "$SESSION"
+if existing_sock="$(session_socket "$SESSION")"; then
+    if [ "$existing_sock" = default ]; then exec tmux attach -t "=$SESSION"; fi
+    exec tmux -L "$existing_sock" attach -t "=$SESSION"
+fi
+
+# Before creating anything: can the server read the directory? If not, Claude
+# Code crashes at once with a misleading "low max file descriptors" error
+# (really EPERM from macOS). Say so plainly instead.
+_probe_dir="${FOUND_CWD:-$PWD}"
+if ! server_can_read "$CCX_SOCKET" "$_probe_dir"; then
+    die_wait "ccx: the tmux server '$CCX_SOCKET' cannot access $_probe_dir" \
+             "(macOS 'Operation not permitted', typically on an external disk)." \
+             "Claude Code would crash here with a misleading 'low max file descriptors'." \
+             "Fix: ccx save, end the sessions with /exit, then run ccx up from Ghostty." \
+             "Diagnose: ccx doctor"
 fi
 
 # A new session does not inherit this shell's environment: it starts from the
@@ -356,12 +643,14 @@ NEW_SESSION_ARGS=(-d -s "$SESSION")
 [ -n "$FOUND_CWD" ] && NEW_SESSION_ARGS+=(-c "$FOUND_CWD")
 
 if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
-    tmux new-session "${NEW_SESSION_ARGS[@]}" \
+    "${TMUX_CMD[@]}" new-session "${NEW_SESSION_ARGS[@]}" \
         "exec env CLAUDE_CONFIG_DIR='$CLAUDE_CONFIG_DIR' '$GUARD_BIN_DIR/claude-guarded'$RESUME_ARG" || exit 1
-    tmux set-environment -t "$SESSION" CLAUDE_CONFIG_DIR "$CLAUDE_CONFIG_DIR"
-    exec tmux attach -t "$SESSION"
+    "${TMUX_CMD[@]}" set-environment -t "$SESSION" CLAUDE_CONFIG_DIR "$CLAUDE_CONFIG_DIR"
+else
+    "${TMUX_CMD[@]}" new-session "${NEW_SESSION_ARGS[@]}" \
+        "exec '$GUARD_BIN_DIR/claude-guarded'$RESUME_ARG" || exit 1
 fi
-
-FINAL_ARGS=(-s "$SESSION")
-[ -n "$FOUND_CWD" ] && FINAL_ARGS+=(-c "$FOUND_CWD")
-exec tmux new-session "${FINAL_ARGS[@]}" "exec '$GUARD_BIN_DIR/claude-guarded'$RESUME_ARG"
+# The session name as window title, so Ghostty windows and tabs can be told apart.
+"${TMUX_CMD[@]}" set-option -g set-titles on 2>/dev/null
+"${TMUX_CMD[@]}" set-option -g set-titles-string '#S' 2>/dev/null
+exec "${TMUX_CMD[@]}" attach -t "=$SESSION"
