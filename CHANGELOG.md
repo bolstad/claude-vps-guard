@@ -6,8 +6,28 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-16
+
 ### Added
 
+- `ccx up [--windows] [-n]`: reopen every session in one sweep on macOS with Ghostty 1.3 or later,
+  which exposes AppleScript. One tab per session in a new window (`--windows` for a window each,
+  `CCX_OPEN_MODE=windows` to make that the default, `-n` to only print the plan). A session that
+  is still running in tmux is attached to; a lost one is recreated with `claude --resume <id>` in
+  its old directory and account; sessions that already have a client attached are skipped.
+  Every tab runs `ccx` itself through the user's own shell (`exec ccx ...` as initial input), so
+  the tmux server is born inside Ghostty and inherits its access to external volumes, and the tab
+  closes when `ccx` ends.
+- `ccx save [file]`: record every running session - name, account, working directory and Claude
+  Code conversation id - in `~/.cache/claude-vps-guard/ccx-sessions.tsv`, or in `<file>`. With a
+  server alive the whole list is rewritten; with no server running the previous list is kept, which
+  is the list needed after a crash or reboot. Quiet unless run in a terminal, so it suits a
+  scheduled job.
+- `ccx up --from <file>`: restore from a list saved earlier, for ending sessions on purpose while a
+  save job keeps rewriting the default list.
+- `ccx doctor [directory]`: report whether each tmux server can read a directory.
+- `docs/platforms.md`: why a long-lived tmux server can lose access to external volumes on macOS,
+  and why that shows up as a misleading "low max file descriptors" crash.
 - `docs/blog.html`: a longer write-up, "Built to survive the machine it runs on", covering the
   problem, the two layers of protection, and the use cases the tool was actually built for. Linked
   from the README; served as a static page by GitHub Pages alongside the README-as-index site.
@@ -45,8 +65,24 @@ All notable changes to this project are documented here. The format follows
   effect when a new session is actually created; reattaching to a session
   that is still running ignores it, same as `-a`.
 
+### Changed
+
+- **`ccx` now runs its sessions on its own tmux server** (socket `ccx`, `CCX_TMUX_SOCKET` to
+  override) instead of the shared default one, so a default server that has lost its macOS
+  permissions can no longer take new sessions down with it. Sessions that are still on the default
+  server keep working: `ccx ls` lists both servers with a new `SERVER` column, and `ccx <name>`,
+  `ccx -c <id>` and `ccx up` find them there (`CCX_LEGACY_SOCKET` to override, mainly for tests).
+  Upgrading needs no action; existing sessions simply live on until they end.
+- New sessions are created detached and then attached, and the tmux server sets the window title to
+  the session name, so several Ghostty windows or tabs can be told apart.
+- `ccx` puts `~/.local/bin`, `/opt/homebrew/bin` and `/usr/local/bin` on `PATH` itself, so it also
+  works from launchd jobs and AppleScript-launched windows that start with a minimal `PATH`.
+
 ### Fixed
 
+- Before creating a session `ccx` now checks that the tmux server can read the target directory. If
+  it cannot, it says so and what to do, instead of letting Claude Code crash with the misleading
+  `low max file descriptors` message.
 - **`make install` built a stale copy of the installer instead of running it.**
   With no makefile in the tree, the target `install` matched make's built-in
   `%: %.sh` rule, whose recipe is `cat $< >$@` followed by `chmod a+x $@`. The
@@ -128,3 +164,5 @@ First tagged release. Everything below was developed between 2026-07-18 and
   ignored rather than dropped silently. The setting works as intended on Linux.
 
 [1.0.0]: https://github.com/bolstad/claude-vps-guard/releases/tag/v1.0.0
+[1.1.0]: https://github.com/bolstad/claude-vps-guard/releases/tag/v1.1.0
+[Unreleased]: https://github.com/bolstad/claude-vps-guard/compare/v1.1.0...HEAD
