@@ -119,3 +119,28 @@ macOS ships bash 3.2. The scripts avoid `mapfile`, associative arrays and other 
 and use `wc -c` rather than the incompatible `stat` flags on GNU and BSD. `ps` is invoked with
 options common to both, and command names are reduced to their basename because macOS reports
 `comm` as an absolute path.
+
+## macOS: tmux and external volumes
+
+macOS decides which processes may read removable and external volumes (the privacy permission
+under System Settings, Privacy & Security) by the process that *started* them, and a process
+that is already running does not pick up a permission granted afterwards. A tmux server outlives
+the terminal that started it, so a long-lived server can end up without access to an external
+disk while a freshly started shell has it.
+
+The symptom is confusing. Every session such a server starts in a directory on the volume
+crashes immediately with
+
+```
+error: An unknown error occurred, possibly due to low max file descriptors (Unexpected)
+```
+
+and raising `ulimit -n` changes nothing: the runtime reports any unexpected error from its first
+filesystem call as a file descriptor problem, and the real error is `EPERM`. `ls` in the same
+directory from a pane of that server says `Operation not permitted`, while `ls -d` succeeds,
+because `stat` is allowed and only reading the directory is not.
+
+`ccx` therefore keeps its own tmux server and checks, before it creates a session, that the server
+can read the directory (`ccx doctor` runs the same check). A server that was started from inside
+Ghostty inherits Ghostty's access, which is why `ccx up` makes every tab run `ccx` itself rather
+than creating the sessions from a helper process that may have no access.

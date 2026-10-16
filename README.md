@@ -21,6 +21,9 @@ Longer write-up: [Built to survive the machine it runs on](docs/blog.html).
 | `ccx -c <session-id>` | Continue one specific Claude Code conversation by id: finds its directory and account automatically, or jumps to its tmux pane if it is already running. |
 | `ccx ls` | List Claude sessions with memory used per session. |
 | `ccx resumable` | List Claude Code conversations you can resume, across every account, newest first - flags which ones already have a live process attached. |
+| `ccx up` | macOS + Ghostty: reopen every session in one sweep, one tab per session. Attaches to the ones still alive in tmux and recreates the lost ones with `claude --resume`. |
+| `ccx save [file]` | Save the list of running sessions (name, account, directory, conversation id) that `ccx up` restores from. |
+| `ccx doctor` | Check that the tmux server can read a directory; explains the misleading "low max file descriptors" crash on macOS. |
 | `claude-guard` | Inspect the watchdog, see and release paused processes, control the service. |
 
 Two layers of protection:
@@ -102,6 +105,8 @@ ccx                # session "claude"
 ccx review         # a second, parallel session named "review"
 ccx ls             # sessions with memory per session
 ccx resumable      # Claude Code conversations you can resume, across every account
+ccx up             # reopen every session in Ghostty, one tab each (macOS)
+ccx save           # write the session list that 'ccx up' restores from
 
 claude-guard              # memory, candidates, paused processes
 claude-guard list         # paused processes only
@@ -144,7 +149,7 @@ sessions instead of shell aliases:
 ccx work -a acme       # first run: log in, credentials saved under ~/.claude-accounts/acme
 ccx personal -a other  # a second account, fully independent
 ccx work                # later: reattaches to "work", still the "acme" account
-ccx ls                  # SESSION, MEMORY, WINDOWS, ACCOUNT, CREATED
+ccx ls                  # SESSION, MEMORY, WINDOWS, ACCOUNT, SERVER, CREATED
 ```
 
 The account only needs to be given when a session is first created; it is stored in that tmux
@@ -219,6 +224,80 @@ If the id turns out to be `active` rather than `resumable`, `-c` does not start 
 conversation - it jumps straight to the tmux pane that already has it (found through the same
 `sessions/<pid>.json` lock file `resumable` reads `STATUS` from), or says so if that process is not
 reachable through tmux.
+
+### Reopening everything in one sweep
+
+tmux keeps the sessions alive when the terminal dies, but reattaching a dozen of them means opening
+a dozen windows and typing a dozen commands. On macOS with [Ghostty](https://ghostty.org) 1.3 or
+later (the version that added AppleScript support), `ccx up` does it in one go:
+
+```sh
+ccx up              # one tab per session, in a new Ghostty window
+ccx up --windows    # a window per session instead (CCX_OPEN_MODE=windows makes it the default)
+ccx up -n           # dry run: show what would be done
+```
+
+For each session on the list it either attaches to the tmux session if it is still running, or
+recreates it with `claude --resume <id>` in its old directory and under its old account. Sessions
+that already have a client attached are skipped, so it is safe to run twice. Each tab is the
+tab title `ccx` sets to the session name.
+
+The list comes from `ccx save`, which records every running session - name, account, working
+directory and Claude Code conversation id - in `~/.cache/claude-vps-guard/ccx-sessions.tsv`. `ccx
+up` saves first, so after Ghostty dies it can restore straight from the live tmux server. The
+list matters when the server itself is gone, after a crash or a reboot: a save with no server
+running keeps the previous list instead of overwriting it with nothing.
+
+While a server is alive, every save rewrites the whole list, so a session you ended with `/exit`
+drops out at the next save. To end sessions on purpose and bring them back later, save to a file of
+your own first and restore from it:
+
+```sh
+ccx save ~/ccx-before-update.tsv
+# ... end the sessions, update, reboot ...
+ccx up --from ~/ccx-before-update.tsv
+```
+
+To keep the default list fresh without thinking about it, run `ccx save` on a schedule. On macOS a
+launchd agent does it:
+
+```xml
+<!-- ~/Library/LaunchAgents/ccx-save.plist -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>ccx-save</string>
+  <key>ProgramArguments</key><array>
+    <string>/Users/you/.local/bin/ccx</string><string>save</string>
+  </array>
+  <key>StartInterval</key><integer>60</integer>
+  <key>RunAtLoad</key><true/>
+</dict></plist>
+```
+
+```sh
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ccx-save.plist
+```
+
+When Ghostty is not running there is no terminal to type `ccx up` into, so wrap it in a tiny app
+you can start from Spotlight or the Dock:
+
+```sh
+osacompile -o ~/Applications/ccx-up.app -e 'do shell script "$HOME/.local/bin/ccx up > /tmp/ccx-up.log 2>&1 &"'
+```
+
+The first run asks macOS whether the app may control Ghostty (Automation permission).
+
+`ccx up` is macOS and Ghostty only. `ccx save` and `ccx doctor` work wherever `ccx` does.
+
+### One tmux server of its own
+
+`ccx` runs its sessions on its own tmux server (socket `ccx`, override with `CCX_TMUX_SOCKET`)
+rather than the shared default one. On macOS a long-lived default server can lose its access to
+external volumes, and from then on every session it starts crashes at once with Claude Code's
+`error: An unknown error occurred, possibly due to low max file descriptors`, whatever the
+`ulimit`. See [docs/platforms.md](docs/platforms.md#macos-tmux-and-external-volumes) for the cause.
+Sessions that are still on the default server keep working: `ccx ls` lists both (the `SERVER`
+column) and `ccx <name>` and `ccx up` attach to them. `ccx doctor [directory]` tells you whether a
+server can read a directory.
 
 ## Configuration
 
