@@ -22,15 +22,19 @@
 #                                 it is recreated with 'claude --resume <id>'. Sessions
 #                                 that are already open are skipped.
 #   ccx up --from <file>      -> like 'up', but with a frozen list (a save job rewrites
-#                                 the default list every minute)
+#                                 the default list every minute). <file> can also be a
+#                                 date, YYYY-MM-DD, for that day's snapshot.
 #   ccx save [file]           -> save the session list (name, account, directory, id)
 #                                 to <file>, default ~/.cache/claude-vps-guard/ccx-sessions.tsv.
 #                                 A file of your own is never rewritten by a save job, so
 #                                 save one before ending sessions on purpose.
 #   ccx doctor [directory]    -> can the tmux server read the directory? (macOS access)
+#   ccx snapshots             -> list the daily snapshots of the session list (one file a
+#                                 day with every session seen that day, kept 30 days)
 #   ccx ls                    -> list Claude sessions with memory per session
 #   ccx resumable [N|all]     -> Claude Code conversations you can resume,
 #                                 across every account, newest first
+#   ccx --version             -> the version of this installed copy
 #   ccx --help                -> this text
 #
 # Multiple accounts: -a/--account <name> points Claude Code at its own config
@@ -69,10 +73,14 @@
 # descriptors". Old sessions on the default server still show up in 'ccx ls' and
 # are attached by 'ccx <name>' and 'ccx up'.
 #
-# ("ls", "resumable", "up", "open", "save", "doctor" and --help are reserved and
+# ("ls", "resumable", "up", "open", "save", "doctor", "snapshots" and --help are reserved and
 #  cannot be used as session names. A bare 'help' is not reserved, so it still starts a session called
 #  "help".)
 set -u
+
+# Bumped together with the CHANGELOG on every release, so an installed copy can say
+# which version it is ('ccx --version'); 'git describe' only works inside a clone.
+CCX_VERSION="1.2.0"
 
 self="${BASH_SOURCE[0]}"
 while [ -L "$self" ]; do
@@ -152,8 +160,13 @@ CONTINUE_ID=""
 OPEN_MODE="${CCX_OPEN_MODE:-tabs}"
 DRY_RUN_UP=""
 MANIFEST_FROM=""
+NO_WARN="${CCX_NO_WARN:-}"
 while [ $# -gt 0 ]; do
     case "$1" in
+        -V|--version)
+            echo "ccx $CCX_VERSION (claude-vps-guard)"
+            exit 0
+            ;;
         -h|--help)
             # The header doubles as the help text. The command is renameable
             # via CC_COMMAND_NAME, so print the name it was actually invoked
@@ -182,6 +195,10 @@ while [ $# -gt 0 ]; do
             ;;
         --continue=*)
             CONTINUE_ID="${1#--continue=}"
+            shift
+            ;;
+        --no-warn)
+            NO_WARN=1
             shift
             ;;
         --from)
@@ -391,6 +408,98 @@ command -v tmux >/dev/null 2>&1 || { echo "tmux is not installed" >&2; exit 1; }
 # born INSIDE Ghostty and inherits its access to external disks.
 
 MANIFEST="$GUARD_STATE_DIR/ccx-sessions.tsv"
+DEFAULT_MANIFEST="$MANIFEST"          # only the default list gets snapshots
+SNAPSHOT_DIR="$GUARD_STATE_DIR/snapshots"
+SNAPSHOT_KEEP_DAYS="${CCX_SNAPSHOT_KEEP_DAYS:-30}"
+
+# Epoch seconds of the last boot, empty if unknown.
+boot_epoch() {
+    if [ "$GUARD_OS" = macos ]; then
+        sysctl -n kern.boottime 2>/dev/null | sed -n 's/.*{ sec = \([0-9]*\),.*/\1/p'
+    elif [ "$GUARD_OS" = linux ]; then
+        awk '/^btime/ { print $2; exit }' /proc/stat 2>/dev/null
+    fi
+}
+
+# True when the list was last written before the current boot, i.e. it is the
+# list from before a restart or crash.
+list_predates_boot() {
+    local m boot
+    [ -s "$1" ] || return 1
+    m="$(file_mtime_epoch "$1")"; boot="$(boot_epoch)"
+    [ -n "$m" ] && [ -n "$boot" ] && [ "$m" -lt "$boot" ]
+}
+
+# Keep the list from before a restart before anything replaces it: the first
+# session started after a reboot makes the next save rewrite the list with just
+# that one session.
+save_preboot_copy() {
+    local m dest
+    list_predates_boot "$MANIFEST" || return 0
+    m="$(file_mtime_epoch "$MANIFEST")"
+    mkdir -p "$SNAPSHOT_DIR"
+    dest="$SNAPSHOT_DIR/ccx-sessions.before-restart-$(date -r "$m" '+%Y-%m-%d_%H%M' 2>/dev/null || date -d "@$m" '+%Y-%m-%d_%H%M').tsv"
+    [ -e "$dest" ] || cp "$MANIFEST" "$dest"
+}
+
+# One file per day holding every session seen that day (the newest row wins per
+# name), so a session ended on purpose in the afternoon is still in the morning's
+# picture. Old snapshots are pruned.
+update_daily_snapshot() {
+    local today snap tmp
+    today="${CCX_SNAPSHOT_DATE:-$(date +%F)}"
+    snap="$SNAPSHOT_DIR/ccx-sessions.$today.tsv"
+    mkdir -p "$SNAPSHOT_DIR"
+    tmp="$snap.tmp.$$"
+    { printf '%s' "$1"; [ -f "$snap" ] && cat "$snap"; } | awk -F'\t' '!seen[$1]++' > "$tmp" && mv "$tmp" "$snap"
+    find "$SNAPSHOT_DIR" -name 'ccx-sessions.*.tsv' -mtime +"$SNAPSHOT_KEEP_DAYS" -delete 2>/dev/null || true
+}
+
+# Before a session is started from scratch: if this computer restarted after the
+# list was saved and nothing is running, say so and let the user back out.
+warn_unrestored_sessions() {
+    local sock m n
+    [ "${CCX_WARN:-boot}" = never ] && return 0
+    for sock in "$CCX_SOCKET" "$LEGACY_SOCKET"; do
+        tmx "$sock" has-session 2>/dev/null && return 0
+    done
+    list_predates_boot "$MANIFEST" || return 0
+    m="$(file_mtime_epoch "$MANIFEST")"
+    n="$(grep -c . "$MANIFEST")"
+    {
+        echo
+        echo "ccx: this computer restarted after the session list was saved ($(epoch_to_human "$m")),"
+        echo "     and $n saved session(s) are not running:"
+        cut -f1,2,3 "$MANIFEST" | head -12 | awk -F'\t' '{ printf "       %-22s %-9s %s\n", $1, $2, $3 }'
+        [ "$n" -gt 12 ] && echo "       ... and $((n - 12)) more"
+        echo "     Starting a new session now replaces that list within a minute."
+        echo "     A copy is kept in $SNAPSHOT_DIR."
+    } >&2
+    if [ ! -t 0 ] || [ ! -t 2 ]; then
+        save_preboot_copy
+        echo "     (not interactive, continuing; restore later with: ccx up --from <file from ccx snapshots>)" >&2
+        return 0
+    fi
+    printf '     [u] run ccx up and restore them   [c] continue with this session   [q] quit (default q): ' >&2
+    local ans=""
+    read -r ans || true
+    case "$ans" in
+        u|U) exec "$CCX_SELF" up ;;
+        c|C) save_preboot_copy; return 0 ;;
+        *)   echo "ccx: nothing started." >&2; exit 1 ;;
+    esac
+}
+
+cmd_snapshots() {
+    local f
+    [ -d "$SNAPSHOT_DIR" ] || { echo "no snapshots yet in $SNAPSHOT_DIR"; return 0; }
+    printf '%-46s %s\n' FILE SESSIONS
+    for f in $(ls -1t "$SNAPSHOT_DIR"/ccx-sessions.*.tsv 2>/dev/null); do
+        printf '%-46s %s  (%s)\n' "$(basename "$f")" "$(grep -c . "$f")" "$(cut -f1 "$f" | tr '\n' ' ' | cut -c1-70)"
+    done
+    echo
+    echo "Restore one with: ccx up --from <file>   (or --from YYYY-MM-DD for a daily snapshot)"
+}
 # Absolute, because the windows Ghostty opens start in another directory.
 CCX_SELF="$GUARD_BIN_DIR/$(basename "$self")"
 
@@ -418,10 +527,15 @@ cmd_save() {
         [ -n "${CCX_VERBOSE:-}" ] && echo "no sessions running, keeping $MANIFEST" >&2
         return 0
     fi
+    if [ "$MANIFEST" = "$DEFAULT_MANIFEST" ]; then
+        save_preboot_copy
+        update_daily_snapshot "$rows"
+    fi
     tmp="$MANIFEST.tmp.$$"
     printf '%s' "$rows" > "$tmp"
-    if [ -f "$MANIFEST" ] && ! cmp -s "$tmp" "$MANIFEST"; then
-        # Identical apart from the timestamp still counts as a change; it is cheap.
+    # .prev holds the list before the last real change; the timestamp column
+    # differs on every save and must not count as one.
+    if [ -f "$MANIFEST" ] && ! cmp -s <(cut -f1-4 "$tmp") <(cut -f1-4 "$MANIFEST"); then
         cp "$MANIFEST" "$MANIFEST.prev"
     fi
     mv "$tmp" "$MANIFEST"
@@ -477,6 +591,9 @@ cmd_up() {
     # --from <file>: use a frozen list instead of the one the save job rewrites
     # every minute (for example after you ended sessions with /exit).
     if [ -n "$MANIFEST_FROM" ]; then
+        # --from 2026-10-16 means that day's snapshot
+        [ -e "$MANIFEST_FROM" ] || [ ! -e "$SNAPSHOT_DIR/ccx-sessions.$MANIFEST_FROM.tsv" ] \
+            || MANIFEST_FROM="$SNAPSHOT_DIR/ccx-sessions.$MANIFEST_FROM.tsv"
         [ -s "$MANIFEST_FROM" ] || { echo "The list $MANIFEST_FROM is missing or empty." >&2; exit 1; }
         MANIFEST="$MANIFEST_FROM"
     else
@@ -500,12 +617,12 @@ cmd_up() {
                 echo "  =  $name  (already open)"; skipped=$((skipped + 1)); continue
             fi
             cmd="$(sq "$CCX_SELF") _attach $(sq "$sock") $(sq "$name")"
-            echo "  ↻  $name  (kopplar in)"
+            echo "  ↻  $name  (attaching)"
         else
             if ! ls "$cwd" >/dev/null 2>&1; then
                 echo "  !  $name  directory not reachable: $cwd" >&2; failed=$((failed + 1)); continue
             fi
-            cmd="$(sq "$CCX_SELF") $(sq "$name")"
+            cmd="$(sq "$CCX_SELF") --no-warn $(sq "$name")"
             [ "$acct" != "-" ] && cmd="$cmd -a $(sq "$acct")"
             [ "$sid" != "-" ] && cmd="$cmd -c $(sq "$sid")"
             if [ "$sid" != "-" ]; then echo "  +  $name  (recreating, id ${sid:0:8}…)"; else echo "  +  $name  (recreating without id, new conversation)"; fi
@@ -550,6 +667,7 @@ case "$SESSION" in
             [ -t 2 ] && CCX_VERBOSE=1; cmd_save; exit $? ;;
     up|open) cmd_up; exit $? ;;
     doctor) cmd_doctor "${EXTRA_ARG:-$PWD}"; exit $? ;;
+    snapshots) cmd_snapshots; exit $? ;;
     _attach)
         # intern: ccx _attach <socket> <session>
         if [ "$EXTRA_ARG" = default ]; then exec tmux attach -t "=$EXTRA_ARG2"; fi
@@ -617,6 +735,10 @@ if existing_sock="$(session_socket "$SESSION")"; then
     if [ "$existing_sock" = default ]; then exec tmux attach -t "=$SESSION"; fi
     exec tmux -L "$existing_sock" attach -t "=$SESSION"
 fi
+
+# A restart leaves a saved list of sessions that are no longer running. Starting
+# a session first would replace that list, so ask before going ahead.
+[ -n "$NO_WARN" ] || warn_unrestored_sessions
 
 # Before creating anything: can the server read the directory? If not, Claude
 # Code crashes at once with a misleading "low max file descriptors" error
