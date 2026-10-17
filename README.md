@@ -23,6 +23,8 @@ Longer write-up: [Built to survive the machine it runs on](docs/blog.html).
 | `ccx resumable` | List Claude Code conversations you can resume, across every account, newest first - flags which ones already have a live process attached. |
 | `ccx up` | macOS + Ghostty: reopen every session in one sweep, one tab per session. Attaches to the ones still alive in tmux and recreates the lost ones with `claude --resume`. |
 | `ccx save [file]` | Save the list of running sessions (name, account, directory, conversation id) that `ccx up` restores from. |
+| `ccx --version` | Print the version of the installed copy, so you can tell which machines have been upgraded. |
+| `ccx snapshots` | List the daily snapshots of the session list, the safety net if the list itself gets replaced. |
 | `ccx doctor` | Check that the tmux server can read a directory; explains the misleading "low max file descriptors" crash on macOS. |
 | `claude-guard` | Inspect the watchdog, see and release paused processes, control the service. |
 
@@ -88,7 +90,9 @@ git pull
 ```
 
 Worth doing deliberately, because an out-of-date install fails quietly rather than loudly: the
-commands keep working, just with the old behaviour. `claude-guard config` prints the effective
+commands keep working, just with the old behaviour. `ccx --version` prints which version an installed
+copy is, to compare with the latest tag; copies installed before 1.2.0 have no such flag, so a
+`ccx --version` that is not recognised means the copy is older than that. `claude-guard config` prints the effective
 paths and settings, so you can at least confirm which files are in play and compare them against
 the clone.
 
@@ -257,6 +261,38 @@ ccx save ~/ccx-before-update.tsv
 # ... end the sessions, update, reboot ...
 ccx up --from ~/ccx-before-update.tsv
 ```
+
+### Daily snapshots and the restart warning
+
+The default list is rewritten on every save, so on its own it is only as good as the last minute.
+Two things keep an earlier picture around:
+
+- **Daily snapshots.** Every save also updates one file a day in
+  `~/.cache/claude-vps-guard/snapshots/` holding every session seen that day (the newest row wins
+  per name), so a session ended on purpose in the afternoon is still in the morning's picture.
+  They are kept 30 days (`CCX_SNAPSHOT_KEEP_DAYS`). `ccx snapshots` lists them, and
+  `ccx up --from 2026-10-16` restores from that day's file.
+- **A copy of the list from before a restart.** The first session started after a reboot would make
+  the next save rewrite the list with just that session, so the old list is copied to
+  `snapshots/ccx-sessions.before-restart-<date>.tsv` before anything replaces it.
+
+When you start a session from scratch after a restart, with nothing running and saved sessions that
+are not, `ccx` stops and asks instead of silently going ahead:
+
+```
+ccx: this computer restarted after the session list was saved (2026-10-16 19:46),
+     and 9 saved session(s) are not running:
+       work                   acme      /home/me/some-project
+       ...
+     Starting a new session now replaces that list within a minute.
+     A copy is kept in ~/.cache/claude-vps-guard/snapshots.
+     [u] run ccx up and restore them   [c] continue with this session   [q] quit (default q):
+```
+
+`u` runs `ccx up`, `c` carries on with the session you asked for (the old list is copied first), and
+Enter or `q` quits without starting anything. The question is only asked in a terminal, and only when
+the list is older than the last boot; `ccx up` starts its own tabs with `--no-warn`, and
+`CCX_WARN=never` turns the question off.
 
 To keep the default list fresh without thinking about it, run `ccx save` on a schedule. On macOS a
 launchd agent does it:
