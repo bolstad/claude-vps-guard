@@ -6,6 +6,30 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-17
+
+### Added
+
+- `ccx --version` (`-V`): print the version of the installed copy. The version is a constant in
+  `bin/ccx`, bumped together with the changelog on each release, because `git describe` only works
+  inside a clone and an installed copy could not otherwise tell which version it is. Copies older
+  than 1.2.0 do not recognise the flag.
+- Daily snapshots of the session list in `~/.cache/claude-vps-guard/snapshots/`, one file a day
+  holding every session seen that day (newest row wins per name), pruned after 30 days
+  (`CCX_SNAPSHOT_KEEP_DAYS`). `ccx snapshots` lists them and `ccx up --from YYYY-MM-DD` restores from
+  a day's file.
+- The list from before a restart is copied to `snapshots/ccx-sessions.before-restart-<date>.tsv`
+  before the first save after the restart replaces it.
+- A warning before a session is started from scratch after a restart. If the saved list is older
+  than the last boot, nothing is running and saved sessions are not, `ccx` asks whether to run
+  `ccx up`, continue, or quit (default). Only in a terminal and only after a restart; `ccx up` passes
+  `--no-warn` to its own tabs, and `CCX_WARN=never` disables it.
+
+### Fixed
+
+- `ccx save` replaced `<list>.prev` on every run, because the timestamp column differs each time, so
+  `.prev` was only ever the list from a minute ago. It now changes only when the sessions do.
+
 ## [1.1.1] - 2026-10-16
 
 ### Fixed
@@ -181,4 +205,5 @@ First tagged release. Everything below was developed between 2026-07-18 and
 [1.0.0]: https://github.com/bolstad/claude-vps-guard/releases/tag/v1.0.0
 [1.1.0]: https://github.com/bolstad/claude-vps-guard/releases/tag/v1.1.0
 [1.1.1]: https://github.com/bolstad/claude-vps-guard/compare/v1.1.0...v1.1.1
-[Unreleased]: https://github.com/bolstad/claude-vps-guard/compare/v1.1.1...HEAD
+[1.2.0]: https://github.com/bolstad/claude-vps-guard/compare/v1.1.1...v1.2.0
+[Unreleased]: https://github.com/bolstad/claude-vps-guard/compare/v1.2.0...HEAD
