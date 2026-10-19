@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The machine name in the tmux status bar and window titles. `ccx` puts `CCX_HOST_LABEL` (default
+  `hostname -s`) first in `status-left` of its own tmux server, in a colour derived from the label
+  (or `CCX_HOST_COLOR`), and titles windows `<host>: <session>`, so a session reached over ssh can
+  no longer be mistaken for a local one. Set the label in `guard.conf` when the hostname is not
+  what you call the machine. Applied when a session is created or attached on the `ccx` server; the
+  shared default server is left alone.
+
 ## [1.2.0] - 2026-10-17
 
 ### Added

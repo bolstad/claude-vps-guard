@@ -120,6 +120,30 @@ tmx() {
     if [ "$sock" = default ]; then tmux "$@"; else tmux -L "$sock" "$@"; fi
 }
 
+# Colour for the host label: CCX_HOST_COLOR if set, otherwise picked from the
+# label itself, so each machine keeps the same colour without any configuration.
+host_label_color() {
+    if [ -n "${CCX_HOST_COLOR:-}" ]; then echo "$CCX_HOST_COLOR"; return; fi
+    local palette=(colour33 colour37 colour64 colour130 colour125 colour91 colour166 colour28)
+    local sum
+    sum="$(printf '%s' "$1" | cksum | cut -d ' ' -f1)"
+    echo "${palette[$(( sum % ${#palette[@]} ))]}"
+}
+
+# apply_host_label <socket>: show CCX_HOST_LABEL in the status bar and window
+# title of a tmux server. Only ever called for ccx's own server; the shared
+# default server belongs to the user and its options are left alone.
+apply_host_label() {
+    local sock="$1" label color
+    label="${CCX_HOST_LABEL//#/##}"
+    [ -n "$label" ] || return 0
+    color="$(host_label_color "$CCX_HOST_LABEL")"
+    tmx "$sock" set-option -g set-titles on 2>/dev/null
+    tmx "$sock" set-option -g set-titles-string "$label: #S" 2>/dev/null
+    tmx "$sock" set-option -g status-left-length 60 2>/dev/null
+    tmx "$sock" set-option -g status-left "#[fg=colour231,bg=$color,bold] $label #[default] [#S] " 2>/dev/null
+}
+
 # Which server has the session? Prints the socket name, otherwise returns 1.
 session_socket() {
     local sock
@@ -671,6 +695,7 @@ case "$SESSION" in
     _attach)
         # intern: ccx _attach <socket> <session>
         if [ "$EXTRA_ARG" = default ]; then exec tmux attach -t "=$EXTRA_ARG2"; fi
+        [ "$EXTRA_ARG" = "$CCX_SOCKET" ] && apply_host_label "$CCX_SOCKET"
         exec tmux -L "$EXTRA_ARG" attach -t "=$EXTRA_ARG2"
         ;;
 esac
@@ -733,6 +758,7 @@ fi
 
 if existing_sock="$(session_socket "$SESSION")"; then
     if [ "$existing_sock" = default ]; then exec tmux attach -t "=$SESSION"; fi
+    [ "$existing_sock" = "$CCX_SOCKET" ] && apply_host_label "$CCX_SOCKET"
     exec tmux -L "$existing_sock" attach -t "=$SESSION"
 fi
 
@@ -777,7 +803,8 @@ else
     "${TMUX_CMD[@]}" new-session "${NEW_SESSION_ARGS[@]}" \
         "exec '$GUARD_BIN_DIR/claude-guarded'$RESUME_ARG" || exit 1
 fi
-# The session name as window title, so Ghostty windows and tabs can be told apart.
-"${TMUX_CMD[@]}" set-option -g set-titles on 2>/dev/null
-"${TMUX_CMD[@]}" set-option -g set-titles-string '#S' 2>/dev/null
+# Machine and session name as window title, so Ghostty windows and tabs can be
+# told apart, and the machine first in the status bar, so a session reached over
+# ssh is never mistaken for a local one.
+apply_host_label "$CCX_SOCKET"
 exec "${TMUX_CMD[@]}" attach -t "=$SESSION"

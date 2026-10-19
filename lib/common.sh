@@ -23,7 +23,7 @@ GUARD_LOG="$GUARD_LOG_DIR/memwatch.log"
 # 'DRY_RUN=1 claude-memwatch' would be silently overridden by the file.
 GUARD_TUNABLES="INTERVAL FLOOR_MB CRIT_MB PROC_HARD_MB SWAP_FLOOR_MB
 NOTIFY_COOLDOWN DRY_RUN MAX_TICKS KEEP_LOG_BYTES CLAUDE_MEMORY_MAX CLAUDE_BIN
-GUARD_USER CAND_RE NOTIFY_CMD CLAUDE_ACCOUNTS_DIR"
+GUARD_USER CAND_RE NOTIFY_CMD CLAUDE_ACCOUNTS_DIR CCX_HOST_LABEL CCX_HOST_COLOR"
 
 if [ -r "$GUARD_CONFIG" ]; then
     _guard_from_env=""
@@ -53,6 +53,10 @@ CLAUDE_MEMORY_MAX="${CLAUDE_MEMORY_MAX:-3G}"
 CLAUDE_BIN="${CLAUDE_BIN:-claude}"
 CLAUDE_ACCOUNTS_DIR="${CLAUDE_ACCOUNTS_DIR:-$HOME/.claude-accounts}"
 GUARD_USER="${GUARD_USER:-$(id -un)}"
+# The machine name ccx shows in the tmux status bar and window titles. Defaults
+# to the short hostname; set it in guard.conf when that is not what you call the
+# machine (macOS hostnames like "Christians-iMac" are rarely the name you use).
+CCX_HOST_LABEL="${CCX_HOST_LABEL:-$(hostname -s 2>/dev/null || uname -n)}"
 
 # Which processes may be paused. Infrastructure (sshd, tmux, bash, the watchdog
 # itself) deliberately does not match, so it can never be frozen.

@@ -244,7 +244,11 @@ ccx up -n           # dry run: show what would be done
 For each session on the list it either attaches to the tmux session if it is still running, or
 recreates it with `claude --resume <id>` in its old directory and under its old account. Sessions
 that already have a client attached are skipped, so it is safe to run twice. Each tab is the
-tab title `ccx` sets to the session name.
+tab title `ccx` sets to `<host>: <session>`.
+
+The status bar of `ccx`'s tmux server starts with the machine name in a colour of its own, so a
+session on another machine (over ssh) cannot be mistaken for a local one. The name is `hostname -s`
+unless `CCX_HOST_LABEL` is set in `guard.conf`; `CCX_HOST_COLOR` overrides the colour.
 
 The list comes from `ccx save`, which records every running session - name, account, working
 directory and Claude Code conversation id - in `~/.cache/claude-vps-guard/ccx-sessions.tsv`. `ccx
