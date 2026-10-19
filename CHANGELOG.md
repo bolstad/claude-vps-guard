@@ -14,6 +14,10 @@ All notable changes to this project are documented here. The format follows
   no longer be mistaken for a local one. Set the label in `guard.conf` when the hostname is not
   what you call the machine. Applied when a session is created or attached on the `ccx` server; the
   shared default server is left alone.
+- `ccx-statusline`, a status line for Claude Code that shows the same machine name and colour
+  outside tmux too (plain terminal, ssh, IDE), followed by the model and directory. Linked into
+  `~/.local/bin` by the installer; enable it with
+  `"statusLine": {"type": "command", "command": "~/.local/bin/ccx-statusline"}` in `settings.json`.
 
 ## [1.2.0] - 2026-10-17
 

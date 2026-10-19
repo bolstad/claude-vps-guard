@@ -50,7 +50,7 @@ esac
 # Only remove links that point into this installation. 'cc' and 'ccx' are both
 # swept so an installation made under the other default is cleaned up too; the
 # readlink check keeps unrelated commands of the same name safe.
-for link in "$BINDIR/$CC_COMMAND_NAME" "$BINDIR/cc" "$BINDIR/ccx" "$BINDIR/claude-guard"; do
+for link in "$BINDIR/$CC_COMMAND_NAME" "$BINDIR/cc" "$BINDIR/ccx" "$BINDIR/claude-guard" "$BINDIR/ccx-statusline"; do
     [ -L "$link" ] || continue
     case "$(readlink "$link")" in
         "$PREFIX"/*) rm -f "$link" ;;

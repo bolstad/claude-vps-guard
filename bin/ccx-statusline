@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# ccx-statusline - status line for Claude Code that names the machine.
+#
+# Inside tmux the ccx status bar already says which machine a session runs on;
+# outside it (a plain terminal, an ssh login, the IDE) nothing does. Point
+# Claude Code's statusLine at this script and every session shows the same
+# CCX_HOST_LABEL, in the same colour, as the ccx tmux bar:
+#
+#   "statusLine": {"type": "command", "command": "~/.local/bin/ccx-statusline"}
+#
+# Reads Claude Code's JSON on stdin and prints one line: host, model, directory.
+# No jq: the fields are flat strings, read the same way ccx reads session files.
+set -u
+
+self="${BASH_SOURCE[0]}"
+while [ -L "$self" ]; do
+    target="$(readlink "$self")"
+    case "$target" in
+        /*) self="$target" ;;
+        *)  self="$(dirname "$self")/$target" ;;
+    esac
+done
+GUARD_BIN_DIR="$(cd "$(dirname "$self")" && pwd)"
+# shellcheck source=../lib/common.sh
+. "$GUARD_BIN_DIR/../lib/common.sh"
+
+input="$(cat)"
+field() { printf '%s' "$input" | grep -o "\"$1\": *\"[^\"]*\"" | head -1 | sed 's/^[^:]*: *"//; s/"$//'; }
+
+# Same palette and pick as host_label_color in ccx, as 256-colour numbers.
+color="${CCX_HOST_COLOR:-}"
+if [ -z "$color" ]; then
+    palette=(33 37 64 130 125 91 166 28)
+    sum="$(printf '%s' "$CCX_HOST_LABEL" | cksum | cut -d ' ' -f1)"
+    color="${palette[$(( sum % ${#palette[@]} ))]}"
+fi
+color="${color#colour}"
+case "$color" in
+    *[!0-9]*|'') bg="" ;;                       # a named or hex tmux colour: no ANSI equivalent here
+    *)           bg="\033[1;97;48;5;${color}m" ;;
+esac
+
+model="$(field display_name)"
+dir="$(field current_dir)"
+[ -n "$dir" ] || dir="$(field cwd)"
+dir="${dir/#$HOME/~}"
+
+if [ -n "$bg" ]; then
+    printf "${bg} %s \033[0m" "$CCX_HOST_LABEL"
+else
+    printf '\033[1m[%s]\033[0m' "$CCX_HOST_LABEL"
+fi
+[ -n "$model" ] && printf ' %s' "$model"
+[ -n "$dir" ] && printf ' \033[2m%s\033[0m' "$dir"
+printf '\n'

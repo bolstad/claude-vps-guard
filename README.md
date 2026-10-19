@@ -250,6 +250,13 @@ The status bar of `ccx`'s tmux server starts with the machine name in a colour o
 session on another machine (over ssh) cannot be mistaken for a local one. The name is `hostname -s`
 unless `CCX_HOST_LABEL` is set in `guard.conf`; `CCX_HOST_COLOR` overrides the colour.
 
+Outside tmux, `ccx-statusline` shows the same name and colour in Claude Code's own status line,
+followed by the model and directory. Add to `~/.claude/settings.json` (and each account's):
+
+```json
+"statusLine": {"type": "command", "command": "~/.local/bin/ccx-statusline"}
+```
+
 The list comes from `ccx save`, which records every running session - name, account, working
 directory and Claude Code conversation id - in `~/.cache/claude-vps-guard/ccx-sessions.tsv`. `ccx
 up` saves first, so after Ghostty dies it can restore straight from the live tmux server. The

@@ -50,7 +50,8 @@ fi
 
 ln -sf "$PREFIX/bin/ccx" "$BINDIR/$CC_COMMAND_NAME"
 ln -sf "$PREFIX/bin/claude-guard" "$BINDIR/claude-guard"
-say "linked $CC_COMMAND_NAME and claude-guard into $BINDIR"
+ln -sf "$PREFIX/bin/ccx-statusline" "$BINDIR/ccx-statusline"
+say "linked $CC_COMMAND_NAME, claude-guard and ccx-statusline into $BINDIR"
 
 case ":$PATH:" in
     *":$BINDIR:"*) ;;
