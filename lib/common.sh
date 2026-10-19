@@ -23,7 +23,8 @@ GUARD_LOG="$GUARD_LOG_DIR/memwatch.log"
 # 'DRY_RUN=1 claude-memwatch' would be silently overridden by the file.
 GUARD_TUNABLES="INTERVAL FLOOR_MB CRIT_MB PROC_HARD_MB SWAP_FLOOR_MB
 NOTIFY_COOLDOWN DRY_RUN MAX_TICKS KEEP_LOG_BYTES CLAUDE_MEMORY_MAX CLAUDE_BIN
-GUARD_USER CAND_RE NOTIFY_CMD CLAUDE_ACCOUNTS_DIR CCX_HOST_LABEL CCX_HOST_COLOR"
+GUARD_USER CAND_RE NOTIFY_CMD CLAUDE_ACCOUNTS_DIR CCX_HOST_LABEL CCX_HOST_COLOR
+CCX_TMUX_SCROLL CCX_TMUX_HISTORY"
 
 if [ -r "$GUARD_CONFIG" ]; then
     _guard_from_env=""
@@ -57,6 +58,11 @@ GUARD_USER="${GUARD_USER:-$(id -un)}"
 # to the short hostname; set it in guard.conf when that is not what you call the
 # machine (macOS hostnames like "Christians-iMac" are rarely the name you use).
 CCX_HOST_LABEL="${CCX_HOST_LABEL:-$(hostname -s 2>/dev/null || uname -n)}"
+# Scrolling on ccx's own tmux server: mouse wheel and PgUp/PgDn ('off' leaves the
+# server's mouse setting and key bindings alone), and the scrollback per pane in
+# lines (0 leaves history-limit alone).
+CCX_TMUX_SCROLL="${CCX_TMUX_SCROLL:-on}"
+CCX_TMUX_HISTORY="${CCX_TMUX_HISTORY:-50000}"
 
 # Which processes may be paused. Infrastructure (sshd, tmux, bash, the watchdog
 # itself) deliberately does not match, so it can never be frozen.

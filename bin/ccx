@@ -144,6 +144,25 @@ apply_host_label() {
     tmx "$sock" set-option -g status-left "#[fg=colour231,bg=$color,bold] $label #[default] [#S] " 2>/dev/null
 }
 
+# apply_scroll <socket>: make Claude Code's output scrollable on a tmux server.
+# tmux starts with the mouse off and 2000 lines of history, so the wheel and
+# PgUp do nothing and long answers scroll out of reach. With the mouse on, the
+# stock WheelUpPane binding already does the right thing: copy-mode in a normal
+# pane, the wheel passed on to the program in alternate screen (Claude Code's
+# "tui": "fullscreen", less, vim). PgUp gets the same split. Only ever called
+# for ccx's own server, like apply_host_label.
+apply_scroll() {
+    local sock="$1"
+    if [ "${CCX_TMUX_HISTORY:-0}" -gt 0 ] 2>/dev/null; then
+        tmx "$sock" set-option -g history-limit "$CCX_TMUX_HISTORY" 2>/dev/null
+    fi
+    [ "$CCX_TMUX_SCROLL" = off ] && return 0
+    tmx "$sock" set-option -g mouse on 2>/dev/null
+    tmx "$sock" bind-key -n PageUp if-shell -F "#{||:#{alternate_on},#{pane_in_mode}}" \
+        "send-keys PageUp" "copy-mode -eu" 2>/dev/null
+    tmx "$sock" bind-key -n PageDown send-keys PageDown 2>/dev/null
+}
+
 # Which server has the session? Prints the socket name, otherwise returns 1.
 session_socket() {
     local sock
@@ -695,7 +714,7 @@ case "$SESSION" in
     _attach)
         # intern: ccx _attach <socket> <session>
         if [ "$EXTRA_ARG" = default ]; then exec tmux attach -t "=$EXTRA_ARG2"; fi
-        [ "$EXTRA_ARG" = "$CCX_SOCKET" ] && apply_host_label "$CCX_SOCKET"
+        if [ "$EXTRA_ARG" = "$CCX_SOCKET" ]; then apply_host_label "$CCX_SOCKET"; apply_scroll "$CCX_SOCKET"; fi
         exec tmux -L "$EXTRA_ARG" attach -t "=$EXTRA_ARG2"
         ;;
 esac
@@ -758,7 +777,7 @@ fi
 
 if existing_sock="$(session_socket "$SESSION")"; then
     if [ "$existing_sock" = default ]; then exec tmux attach -t "=$SESSION"; fi
-    [ "$existing_sock" = "$CCX_SOCKET" ] && apply_host_label "$CCX_SOCKET"
+    if [ "$existing_sock" = "$CCX_SOCKET" ]; then apply_host_label "$CCX_SOCKET"; apply_scroll "$CCX_SOCKET"; fi
     exec tmux -L "$existing_sock" attach -t "=$SESSION"
 fi
 
@@ -795,16 +814,25 @@ RESUME_ARG=""
 NEW_SESSION_ARGS=(-d -s "$SESSION")
 [ -n "$FOUND_CWD" ] && NEW_SESSION_ARGS+=(-c "$FOUND_CWD")
 
+# history-limit is read when a pane is created, so it has to be in place before
+# new-session. Chained into the same tmux call, it also lands on a server that
+# this very call starts (a separate set-option would find no server to talk to).
+HISTORY_PRE=(show-options -g history-limit)
+if [ "${CCX_TMUX_HISTORY:-0}" -gt 0 ] 2>/dev/null; then
+    HISTORY_PRE=(set-option -g history-limit "$CCX_TMUX_HISTORY")
+fi
+
 if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
-    "${TMUX_CMD[@]}" new-session "${NEW_SESSION_ARGS[@]}" \
-        "exec env CLAUDE_CONFIG_DIR='$CLAUDE_CONFIG_DIR' '$GUARD_BIN_DIR/claude-guarded'$RESUME_ARG" || exit 1
+    "${TMUX_CMD[@]}" "${HISTORY_PRE[@]}" \; new-session "${NEW_SESSION_ARGS[@]}" \
+        "exec env CLAUDE_CONFIG_DIR='$CLAUDE_CONFIG_DIR' '$GUARD_BIN_DIR/claude-guarded'$RESUME_ARG" >/dev/null || exit 1
     "${TMUX_CMD[@]}" set-environment -t "$SESSION" CLAUDE_CONFIG_DIR "$CLAUDE_CONFIG_DIR"
 else
-    "${TMUX_CMD[@]}" new-session "${NEW_SESSION_ARGS[@]}" \
-        "exec '$GUARD_BIN_DIR/claude-guarded'$RESUME_ARG" || exit 1
+    "${TMUX_CMD[@]}" "${HISTORY_PRE[@]}" \; new-session "${NEW_SESSION_ARGS[@]}" \
+        "exec '$GUARD_BIN_DIR/claude-guarded'$RESUME_ARG" >/dev/null || exit 1
 fi
 # Machine and session name as window title, so Ghostty windows and tabs can be
 # told apart, and the machine first in the status bar, so a session reached over
-# ssh is never mistaken for a local one.
+# ssh is never mistaken for a local one. Scrolling for the session's later panes.
 apply_host_label "$CCX_SOCKET"
+apply_scroll "$CCX_SOCKET"
 exec "${TMUX_CMD[@]}" attach -t "=$SESSION"

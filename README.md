@@ -346,6 +346,15 @@ Sessions that are still on the default server keep working: `ccx ls` lists both 
 column) and `ccx <name>` and `ccx up` attach to them. `ccx doctor [directory]` tells you whether a
 server can read a directory.
 
+That server is also set up for scrolling back through long answers, which a stock tmux does not
+allow: the mouse wheel and PgUp/PgDn work, and each pane keeps 50 000 lines of history instead of
+2 000. In a normal pane the wheel and PgUp enter copy-mode (`q` or scrolling back to the bottom
+leaves it); when Claude Code runs in alternate screen (`"tui": "fullscreen"`), or in `less` and
+`vim`, they go to the program instead. With the mouse on, a plain drag selects in tmux; hold Option
+(macOS) or Shift (most Linux terminals) to select in the terminal as before. `CCX_TMUX_SCROLL=off`
+leaves the mouse and key bindings alone and `CCX_TMUX_HISTORY=0` the history limit, for when your
+own `~/.tmux.conf` should decide. The larger history applies to panes created after it is set.
+
 ## Configuration
 
 Everything lives in `~/.config/claude-vps-guard/guard.conf`; environment variables override it.

@@ -64,6 +64,13 @@ CLAUDE_MEMORY_MAX=3G
 # CCX_HOST_LABEL=studio
 # CCX_HOST_COLOR=colour33
 
+# Scrolling on ccx's own tmux server. 'on' turns the mouse on and binds PgUp/PgDn
+# (into copy-mode in a normal pane, passed on to the program in alternate
+# screen); 'off' leaves both to your ~/.tmux.conf. CCX_TMUX_HISTORY is the
+# scrollback per pane in lines; 0 leaves history-limit alone.
+# CCX_TMUX_SCROLL=on
+# CCX_TMUX_HISTORY=50000
+
 # --- notifications -----------------------------------------------------------
 
 # Command receiving the subject as its argument and the body on stdin. Leave it

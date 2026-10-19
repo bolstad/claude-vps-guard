@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Scrolling in `ccx` sessions. `ccx`'s own tmux server now has the mouse on, PgUp/PgDn bound and
+  50 000 lines of history per pane, where stock tmux has the mouse off and 2 000 lines, so neither
+  the wheel nor PgUp reached Claude Code's earlier output. In a normal pane the wheel and PgUp enter
+  copy-mode; in alternate screen (Claude Code's `"tui": "fullscreen"`, `less`, `vim`) they go to
+  the program. The history limit is set before the session's first pane is created, so it applies
+  to new sessions straight away. `CCX_TMUX_SCROLL=off` and `CCX_TMUX_HISTORY=0` opt out. The
+  shared default server is left alone.
+
 ## [1.3.0] - 2026-10-19
 
 ### Added
