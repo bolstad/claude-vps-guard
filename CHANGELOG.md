@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-19
+
 ### Added
 
 - Scrolling in `ccx` sessions. `ccx`'s own tmux server now has the mouse on, PgUp/PgDn bound and
@@ -232,4 +234,5 @@ First tagged release. Everything below was developed between 2026-07-18 and
 [1.1.1]: https://github.com/bolstad/claude-vps-guard/compare/v1.1.0...v1.1.1
 [1.2.0]: https://github.com/bolstad/claude-vps-guard/compare/v1.1.1...v1.2.0
 [1.3.0]: https://github.com/bolstad/claude-vps-guard/compare/v1.2.0...v1.3.0
-[Unreleased]: https://github.com/bolstad/claude-vps-guard/compare/v1.3.0...HEAD
+[1.4.0]: https://github.com/bolstad/claude-vps-guard/compare/v1.3.0...v1.4.0
+[Unreleased]: https://github.com/bolstad/claude-vps-guard/compare/v1.4.0...HEAD

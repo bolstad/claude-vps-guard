@@ -80,7 +80,7 @@ set -u
 
 # Bumped together with the CHANGELOG on every release, so an installed copy can say
 # which version it is ('ccx --version'); 'git describe' only works inside a clone.
-CCX_VERSION="1.3.0"
+CCX_VERSION="1.4.0"
 
 self="${BASH_SOURCE[0]}"
 while [ -L "$self" ]; do
