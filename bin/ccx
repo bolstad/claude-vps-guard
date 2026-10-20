@@ -744,8 +744,20 @@ if [ -n "$CONTINUE_ID" ]; then
     fi
     FOUND_ACCOUNT="$(cut -d "$TAB" -f2 <<<"$found")"
     FOUND_CWD="$(cut -d "$TAB" -f4 <<<"$found")"
-    if [ -z "$ACCOUNT_EXPLICIT" ] && [ "$FOUND_ACCOUNT" != "-" ]; then
-        ACCOUNT="$FOUND_ACCOUNT"
+    # The conversation only exists under the account it was found in, so that
+    # account has to win over a CLAUDE_CONFIG_DIR inherited from the calling
+    # shell - inside tmux that is the server's global environment, i.e. the
+    # account of whichever session happened to start the server. Resuming
+    # under the wrong account makes Claude Code exit at once ("no
+    # conversation found") and the pane closes before anything shows.
+    if [ -z "$ACCOUNT_EXPLICIT" ]; then
+        if [ "$FOUND_ACCOUNT" = "-" ]; then
+            ACCOUNT=""
+            unset CLAUDE_CONFIG_DIR
+        else
+            ACCOUNT="$FOUND_ACCOUNT"
+            CLAUDE_CONFIG_DIR="$CLAUDE_ACCOUNTS_DIR/$ACCOUNT"
+        fi
     fi
 
     if [ -z "$SESSION" ]; then
@@ -828,7 +840,7 @@ if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
     "${TMUX_CMD[@]}" set-environment -t "$SESSION" CLAUDE_CONFIG_DIR "$CLAUDE_CONFIG_DIR"
 else
     "${TMUX_CMD[@]}" "${HISTORY_PRE[@]}" \; new-session "${NEW_SESSION_ARGS[@]}" \
-        "exec '$GUARD_BIN_DIR/claude-guarded'$RESUME_ARG" >/dev/null || exit 1
+        "exec env -u CLAUDE_CONFIG_DIR '$GUARD_BIN_DIR/claude-guarded'$RESUME_ARG" >/dev/null || exit 1
 fi
 # Machine and session name as window title, so Ghostty windows and tabs can be
 # told apart, and the machine first in the status bar, so a session reached over
