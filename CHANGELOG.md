@@ -6,6 +6,20 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `ccx <name> -a <account>` asks before creating an account that does not exist yet. It lists the
+  existing accounts under `CLAUDE_ACCOUNTS_DIR` and creates the new directory only after a `y`; a
+  typo such as `carnabhy` for `carnaby` used to create a new, empty account without a word and
+  start a fresh login in it. Not interactive: nothing is started unless `--new-account` is given.
+  Reattaching to a running session is unaffected.
+
+### Fixed
+
+- An explicit `-a` now wins over an inherited `CLAUDE_CONFIG_DIR`. Inside a `ccx` session that
+  variable is always set, so `ccx other -a <account>` started from there quietly ran under the
+  calling session's account.
+
 ## [1.4.0] - 2026-10-19
 
 ### Added

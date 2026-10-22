@@ -8,6 +8,8 @@
 #   ccx                       -> session "claude"
 #   ccx <name>                -> session <name>   (several names = several parallel sessions)
 #   ccx <name> -a <account>   -> session <name>, logged in as <account>
+#                                 (asks before creating an account that does not
+#                                 exist yet; --new-account skips the question)
 #   ccx <name> -r             -> session <name>, running 'claude --resume'
 #   ccx -c <session-id>       -> new session, auto-named and pointed at the
 #                                 right directory and account, continuing
@@ -42,8 +44,11 @@
 # logged in side by side without re-authenticating. The account only needs to
 # be given when a session is first created - it lives in that tmux session's
 # environment from then on, so a plain 'ccx <name>' reattaches with the same
-# account already in place. Set CLAUDE_CONFIG_DIR yourself beforehand to
-# override the directory for a single call.
+# account already in place. Set CLAUDE_CONFIG_DIR yourself beforehand (and
+# leave out -a, which wins over it) to override the directory for a single
+# call. An account that does not exist yet
+# is only created after you confirm it (or with --new-account), so a typo in
+# '-a' cannot quietly create a new, empty account.
 #
 # -r/--resume: build the same tmux session, memory cap and account as usual,
 # but hand Claude Code '--resume' instead of starting a blank conversation.
@@ -204,6 +209,7 @@ OPEN_MODE="${CCX_OPEN_MODE:-tabs}"
 DRY_RUN_UP=""
 MANIFEST_FROM=""
 NO_WARN="${CCX_NO_WARN:-}"
+NEW_ACCOUNT=""
 while [ $# -gt 0 ]; do
     case "$1" in
         -V|--version)
@@ -242,6 +248,10 @@ while [ $# -gt 0 ]; do
             ;;
         --no-warn)
             NO_WARN=1
+            shift
+            ;;
+        --new-account)
+            NEW_ACCOUNT=1
             shift
             ;;
         --from)
@@ -533,6 +543,40 @@ warn_unrestored_sessions() {
     esac
 }
 
+# '-a' with a misspelt name used to create a new, empty account directory
+# without a word ('carnabhy' for 'carnaby'), and Claude Code then started a
+# fresh login in it. An account directory that does not exist yet is created
+# only after a yes at the prompt, or with --new-account. Not interactive and
+# no --new-account: nothing is started.
+confirm_new_account() {
+    [ -d "$CLAUDE_CONFIG_DIR" ] && return 0
+    [ -n "$NEW_ACCOUNT" ] && return 0
+    local existing="" d name
+    for d in "$CLAUDE_ACCOUNTS_DIR"/*/; do
+        [ -d "$d" ] || continue
+        name="$(basename "$d")"
+        case "$name" in *.lock) continue ;; esac
+        existing="$existing $name"
+    done
+    {
+        echo
+        echo "ccx: account '$ACCOUNT' does not exist ($CLAUDE_CONFIG_DIR)."
+        echo "     Existing accounts:${existing:- (none)}"
+        echo "     Going ahead creates a new, empty account that needs its own login."
+    } >&2
+    if [ ! -t 0 ] || [ ! -t 2 ]; then
+        echo "     (not interactive, nothing started; pass --new-account to create it)" >&2
+        exit 1
+    fi
+    printf "     Create account '%s'? [y/N] " "$ACCOUNT" >&2
+    local ans=""
+    read -r ans || true
+    case "$ans" in
+        y|Y|yes|YES) return 0 ;;
+        *) echo "ccx: nothing started." >&2; exit 1 ;;
+    esac
+}
+
 cmd_snapshots() {
     local f
     [ -d "$SNAPSHOT_DIR" ] || { echo "no snapshots yet in $SNAPSHOT_DIR"; return 0; }
@@ -782,15 +826,26 @@ SESSION="${SESSION:-${CLAUDE_TMUX_SESSION:-claude}}"
 
 if [ -n "$ACCOUNT" ]; then
     # CLAUDE_ACCOUNTS_DIR comes from common.sh (config file / env / default).
-    : "${CLAUDE_CONFIG_DIR:=$CLAUDE_ACCOUNTS_DIR/$ACCOUNT}"
+    # An explicit -a wins over an inherited CLAUDE_CONFIG_DIR: inside a ccx
+    # session that variable is always set (the account of that session), so
+    # 'ccx other -a <account>' run from there quietly used the wrong account.
+    if [ -n "$ACCOUNT_EXPLICIT" ]; then
+        CLAUDE_CONFIG_DIR="$CLAUDE_ACCOUNTS_DIR/$ACCOUNT"
+    else
+        : "${CLAUDE_CONFIG_DIR:=$CLAUDE_ACCOUNTS_DIR/$ACCOUNT}"
+    fi
     export CLAUDE_CONFIG_DIR
-    mkdir -p "$CLAUDE_CONFIG_DIR"
 fi
 
 if existing_sock="$(session_socket "$SESSION")"; then
     if [ "$existing_sock" = default ]; then exec tmux attach -t "=$SESSION"; fi
     if [ "$existing_sock" = "$CCX_SOCKET" ]; then apply_host_label "$CCX_SOCKET"; apply_scroll "$CCX_SOCKET"; fi
     exec tmux -L "$existing_sock" attach -t "=$SESSION"
+fi
+
+if [ -n "$ACCOUNT" ]; then
+    confirm_new_account
+    mkdir -p "$CLAUDE_CONFIG_DIR"
 fi
 
 # A restart leaves a saved list of sessions that are no longer running. Starting

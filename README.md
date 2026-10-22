@@ -150,7 +150,7 @@ side by side without re-authenticating - the same trick as `CLAUDE_CONFIG_DIR`, 
 sessions instead of shell aliases:
 
 ```sh
-ccx work -a acme       # first run: log in, credentials saved under ~/.claude-accounts/acme
+ccx work -a acme       # first run: confirm the new account, log in, saved under ~/.claude-accounts/acme
 ccx personal -a other  # a second account, fully independent
 ccx work                # later: reattaches to "work", still the "acme" account
 ccx ls                  # SESSION, MEMORY, WINDOWS, ACCOUNT, SERVER, CREATED
@@ -158,8 +158,13 @@ ccx ls                  # SESSION, MEMORY, WINDOWS, ACCOUNT, SERVER, CREATED
 
 The account only needs to be given when a session is first created; it is stored in that tmux
 session's own environment, so plain `ccx <name>` reattaches with the same account already active.
-Set `CLAUDE_CONFIG_DIR` yourself before calling `ccx` to point at an arbitrary directory instead,
-or `CLAUDE_ACCOUNTS_DIR` to change where per-account directories are created.
+Set `CLAUDE_CONFIG_DIR` yourself before calling `ccx` (without `-a`, which wins over it) to point
+at an arbitrary directory instead, or `CLAUDE_ACCOUNTS_DIR` to change where per-account directories
+are created.
+
+An account that does not exist yet is not created silently: `ccx` lists the existing accounts and
+asks before creating it, so a typo in `-a` cannot leave a new, empty account behind. Pass
+`--new-account` to create one without the question (required when not interactive).
 
 ### Resuming after a reboot
 
