@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10-22
+
 ### Added
 
 - `ccx <name> -a <account>` asks before creating an account that does not exist yet. It lists the
@@ -16,6 +18,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- `ccx -c <session-id>` resumes under the account the conversation belongs to. An inherited
+  `CLAUDE_CONFIG_DIR` (inside tmux: the server's global environment) won over the account `-c`
+  looked up, so Claude Code found no conversation and the pane closed at once.
 - An explicit `-a` now wins over an inherited `CLAUDE_CONFIG_DIR`. Inside a `ccx` session that
   variable is always set, so `ccx other -a <account>` started from there quietly ran under the
   calling session's account.
@@ -249,4 +254,5 @@ First tagged release. Everything below was developed between 2026-07-18 and
 [1.2.0]: https://github.com/bolstad/claude-vps-guard/compare/v1.1.1...v1.2.0
 [1.3.0]: https://github.com/bolstad/claude-vps-guard/compare/v1.2.0...v1.3.0
 [1.4.0]: https://github.com/bolstad/claude-vps-guard/compare/v1.3.0...v1.4.0
-[Unreleased]: https://github.com/bolstad/claude-vps-guard/compare/v1.4.0...HEAD
+[1.5.0]: https://github.com/bolstad/claude-vps-guard/compare/v1.4.0...v1.5.0
+[Unreleased]: https://github.com/bolstad/claude-vps-guard/compare/v1.5.0...HEAD
