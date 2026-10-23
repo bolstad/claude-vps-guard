@@ -64,6 +64,12 @@ CLAUDE_MEMORY_MAX=3G
 # CCX_HOST_LABEL=studio
 # CCX_HOST_COLOR=colour33
 
+# Next to the machine name, the status bar (and ccx-statusline) shows which
+# account the session runs as: the CLAUDE_CONFIG_DIR name, or "default" (grey).
+# Each account gets a colour derived from its name; override per account with
+# "name=colour" pairs (256-colour numbers, or tmux colour names for tmux only).
+# CCX_ACCOUNT_COLORS="atdt=160 bolstad=99 carnaby=208"
+
 # Scrolling on ccx's own tmux server. 'on' turns the mouse on and binds PgUp/PgDn
 # (into copy-mode in a normal pane, passed on to the program in alternate
 # screen); 'off' leaves both to your ~/.tmux.conf. CCX_TMUX_HISTORY is the

@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The account next to the machine name. The `ccx` tmux status bar and `ccx-statusline` show which
+  account a session runs as (the `CLAUDE_CONFIG_DIR` name, or a grey `default`), each account in a
+  colour derived from its name. `CCX_ACCOUNT_COLORS="name=colour ..."` in `guard.conf` overrides
+  the colours. Running sessions get the label the next time `ccx` attaches to the server.
+
 ## [1.5.0] - 2026-10-22
 
 ### Added

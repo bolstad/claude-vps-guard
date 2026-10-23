@@ -253,10 +253,13 @@ tab title `ccx` sets to `<host>: <session>`.
 
 The status bar of `ccx`'s tmux server starts with the machine name in a colour of its own, so a
 session on another machine (over ssh) cannot be mistaken for a local one. The name is `hostname -s`
-unless `CCX_HOST_LABEL` is set in `guard.conf`; `CCX_HOST_COLOR` overrides the colour.
+unless `CCX_HOST_LABEL` is set in `guard.conf`; `CCX_HOST_COLOR` overrides the colour. Right after
+it comes the account the session runs as (`-a`), also in a colour of its own: the name of its
+`CLAUDE_CONFIG_DIR`, or a grey `default` without one. Account colours are derived from the name, so
+they are the same on every machine; `CCX_ACCOUNT_COLORS="atdt=160 bolstad=99"` overrides them.
 
 Outside tmux, `ccx-statusline` shows the same name and colour in Claude Code's own status line,
-followed by the model and directory. Add to `~/.claude/settings.json` (and each account's):
+followed by the account, model and directory. Add to `~/.claude/settings.json` (and each account's):
 
 ```json
 "statusLine": {"type": "command", "command": "~/.local/bin/ccx-statusline"}

@@ -135,18 +135,39 @@ host_label_color() {
     echo "${palette[$(( sum % ${#palette[@]} ))]}"
 }
 
-# apply_host_label <socket>: show CCX_HOST_LABEL in the status bar and window
-# title of a tmux server. Only ever called for ccx's own server; the shared
-# default server belongs to the user and its options are left alone.
+# apply_account_labels <socket>: give every session on a tmux server the
+# option @ccx_account, its account name in that account's colour, ready for
+# status-left. The account lives in each session's own environment, which a
+# status-left format cannot read, so it is copied into a session option here.
+apply_account_labels() {
+    local sock="$1" name line acct color
+    tmx "$sock" list-sessions -F '#{session_name}' 2>/dev/null | while IFS= read -r name; do
+        line="$(tmx "$sock" show-environment -t "=$name" CLAUDE_CONFIG_DIR 2>/dev/null)"
+        case "$line" in
+            CLAUDE_CONFIG_DIR=*) acct="$(account_label "${line#CLAUDE_CONFIG_DIR=}")" ;;
+            *)                   acct="$(account_label "")" ;;
+        esac
+        color="$(account_color "$acct")"
+        case "$color" in *[!0-9]*|'') ;; *) color="colour$color" ;; esac
+        tmx "$sock" set-option -t "=$name:" @ccx_account \
+            "#[fg=colour231,bg=$color,bold] ${acct//#/##} #[default]" 2>/dev/null
+    done
+}
+
+# apply_host_label <socket>: show CCX_HOST_LABEL, and the session's account,
+# in the status bar and window title of a tmux server. Only ever called for
+# ccx's own server; the shared default server belongs to the user and its
+# options are left alone.
 apply_host_label() {
     local sock="$1" label color
     label="${CCX_HOST_LABEL//#/##}"
     [ -n "$label" ] || return 0
     color="$(host_label_color "$CCX_HOST_LABEL")"
+    apply_account_labels "$sock"
     tmx "$sock" set-option -g set-titles on 2>/dev/null
     tmx "$sock" set-option -g set-titles-string "$label: #S" 2>/dev/null
-    tmx "$sock" set-option -g status-left-length 60 2>/dev/null
-    tmx "$sock" set-option -g status-left "#[fg=colour231,bg=$color,bold] $label #[default] [#S] " 2>/dev/null
+    tmx "$sock" set-option -g status-left-length 80 2>/dev/null
+    tmx "$sock" set-option -g status-left "#[fg=colour231,bg=$color,bold] $label #[default]#{@ccx_account} [#S] " 2>/dev/null
 }
 
 # apply_scroll <socket>: make Claude Code's output scrollable on a tmux server.

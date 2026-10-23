@@ -24,7 +24,7 @@ GUARD_LOG="$GUARD_LOG_DIR/memwatch.log"
 GUARD_TUNABLES="INTERVAL FLOOR_MB CRIT_MB PROC_HARD_MB SWAP_FLOOR_MB
 NOTIFY_COOLDOWN DRY_RUN MAX_TICKS KEEP_LOG_BYTES CLAUDE_MEMORY_MAX CLAUDE_BIN
 GUARD_USER CAND_RE NOTIFY_CMD CLAUDE_ACCOUNTS_DIR CCX_HOST_LABEL CCX_HOST_COLOR
-CCX_TMUX_SCROLL CCX_TMUX_HISTORY"
+CCX_ACCOUNT_COLORS CCX_TMUX_SCROLL CCX_TMUX_HISTORY"
 
 if [ -r "$GUARD_CONFIG" ]; then
     _guard_from_env=""
@@ -58,6 +58,10 @@ GUARD_USER="${GUARD_USER:-$(id -un)}"
 # to the short hostname; set it in guard.conf when that is not what you call the
 # machine (macOS hostnames like "Christians-iMac" are rarely the name you use).
 CCX_HOST_LABEL="${CCX_HOST_LABEL:-$(hostname -s 2>/dev/null || uname -n)}"
+# Colours for the account label next to the machine name, as "name=colour"
+# pairs ("atdt=160 bolstad=99"). Accounts not listed get a colour derived from
+# their name, from a palette of their own so they do not look like a host.
+CCX_ACCOUNT_COLORS="${CCX_ACCOUNT_COLORS:-}"
 # Scrolling on ccx's own tmux server: mouse wheel and PgUp/PgDn ('off' leaves the
 # server's mouse setting and key bindings alone), and the scrollback per pane in
 # lines (0 leaves history-limit alone).
@@ -176,6 +180,26 @@ rss_tree_kb() {
             for (i = 1; i <= n; i++) if (want[pid[i]]) total += rss[i]
             printf "%d", total
         }'
+}
+
+# account_label <config-dir>: the account name ccx and ccx-statusline show for
+# a CLAUDE_CONFIG_DIR, "default" when it is empty (Claude Code's own ~/.claude).
+account_label() {
+    if [ -n "${1:-}" ]; then basename "$1"; else echo default; fi
+}
+
+# account_color <name>: a 256-colour number for an account label. CCX_ACCOUNT_COLORS
+# wins; "default" is grey; anything else is picked from the name, so each account
+# keeps the same colour on every machine without any configuration.
+account_color() {
+    local pair palette sum
+    for pair in $CCX_ACCOUNT_COLORS; do
+        [ "${pair%%=*}" = "$1" ] && { pair="${pair#*=}"; echo "${pair#colour}"; return; }
+    done
+    [ "$1" = default ] && { echo 244; return; }
+    palette=(208 160 99 31 136 162 24 94)
+    sum="$(printf '%s' "$1" | cksum | cut -d ' ' -f1)"
+    echo "${palette[$(( sum % ${#palette[@]} ))]}"
 }
 
 pid_alive()  { kill -0 "$1" 2>/dev/null; }

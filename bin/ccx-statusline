@@ -4,11 +4,13 @@
 # Inside tmux the ccx status bar already says which machine a session runs on;
 # outside it (a plain terminal, an ssh login, the IDE) nothing does. Point
 # Claude Code's statusLine at this script and every session shows the same
-# CCX_HOST_LABEL, in the same colour, as the ccx tmux bar:
+# CCX_HOST_LABEL and account, in the same colours, as the ccx tmux bar:
 #
 #   "statusLine": {"type": "command", "command": "~/.local/bin/ccx-statusline"}
 #
-# Reads Claude Code's JSON on stdin and prints one line: host, model, directory.
+# Reads Claude Code's JSON on stdin and prints one line: host, account, model,
+# directory. The account is the CLAUDE_CONFIG_DIR Claude Code runs with, which
+# this script inherits ("default" without one).
 # No jq: the fields are flat strings, read the same way ccx reads session files.
 set -u
 
@@ -40,6 +42,9 @@ case "$color" in
     *)           bg="\033[1;97;48;5;${color}m" ;;
 esac
 
+acct="$(account_label "${CLAUDE_CONFIG_DIR:-}")"
+acct_color="$(account_color "$acct")"
+
 model="$(field display_name)"
 dir="$(field current_dir)"
 [ -n "$dir" ] || dir="$(field cwd)"
@@ -50,6 +55,10 @@ if [ -n "$bg" ]; then
 else
     printf '\033[1m[%s]\033[0m' "$CCX_HOST_LABEL"
 fi
+case "$acct_color" in
+    *[!0-9]*|'') printf ' \033[1m(%s)\033[0m' "$acct" ;;
+    *)           printf "\033[1;97;48;5;${acct_color}m %s \033[0m" "$acct" ;;
+esac
 [ -n "$model" ] && printf ' %s' "$model"
 [ -n "$dir" ] && printf ' \033[2m%s\033[0m' "$dir"
 printf '\n'
