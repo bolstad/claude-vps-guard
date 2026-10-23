@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-10-23
+
 ### Added
 
 - The account next to the machine name. The `ccx` tmux status bar and `ccx-statusline` show which
@@ -262,4 +264,5 @@ First tagged release. Everything below was developed between 2026-07-18 and
 [1.3.0]: https://github.com/bolstad/claude-vps-guard/compare/v1.2.0...v1.3.0
 [1.4.0]: https://github.com/bolstad/claude-vps-guard/compare/v1.3.0...v1.4.0
 [1.5.0]: https://github.com/bolstad/claude-vps-guard/compare/v1.4.0...v1.5.0
-[Unreleased]: https://github.com/bolstad/claude-vps-guard/compare/v1.5.0...HEAD
+[1.6.0]: https://github.com/bolstad/claude-vps-guard/compare/v1.5.0...v1.6.0
+[Unreleased]: https://github.com/bolstad/claude-vps-guard/compare/v1.6.0...HEAD
