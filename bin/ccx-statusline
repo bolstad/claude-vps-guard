@@ -50,15 +50,33 @@ dir="$(field current_dir)"
 [ -n "$dir" ] || dir="$(field cwd)"
 dir="${dir/#$HOME/~}"
 
-if [ -n "$bg" ]; then
-    printf "${bg} %s \033[0m" "$CCX_HOST_LABEL"
-else
-    printf '\033[1m[%s]\033[0m' "$CCX_HOST_LABEL"
+# Inside a ccx tmux session the tmux bar already shows the machine (status-left)
+# and the account (@ccx_account), so do not repeat them here. A tmux session that
+# ccx did not set up still gets both.
+show_host=1 show_acct=1
+if [ -n "${TMUX:-}" ] && command -v tmux >/dev/null 2>&1; then
+    case "$(tmux show-options -gqv status-left 2>/dev/null)" in
+        *" $CCX_HOST_LABEL "*) show_host=0 ;;
+    esac
+    [ -n "$(tmux show-options -qv @ccx_account 2>/dev/null)" ] && show_acct=0
 fi
-case "$acct_color" in
-    *[!0-9]*|'') printf ' \033[1m(%s)\033[0m' "$acct" ;;
-    *)           printf "\033[1;97;48;5;${acct_color}m %s \033[0m" "$acct" ;;
-esac
-[ -n "$model" ] && printf ' %s' "$model"
+
+sep=''
+if [ "$show_host" = 1 ]; then
+    if [ -n "$bg" ]; then
+        printf "${bg} %s \033[0m" "$CCX_HOST_LABEL"
+    else
+        printf '\033[1m[%s]\033[0m' "$CCX_HOST_LABEL"
+    fi
+    sep=' '
+fi
+if [ "$show_acct" = 1 ]; then
+    case "$acct_color" in
+        *[!0-9]*|'') printf ' \033[1m(%s)\033[0m' "$acct" ;;
+        *)           printf "\033[1;97;48;5;${acct_color}m %s \033[0m" "$acct" ;;
+    esac
+    sep=' '
+fi
+[ -n "$model" ] && printf '%s%s' "$sep" "$model"
 [ -n "$dir" ] && printf ' \033[2m%s\033[0m' "$dir"
 printf '\n'

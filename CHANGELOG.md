@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- `ccx-statusline` no longer repeats the machine name and account inside a ccx tmux session,
+  where the tmux status bar already shows both. The machine is left out when tmux's
+  `status-left` carries `CCX_HOST_LABEL`, the account when the session has `@ccx_account`.
+  Outside tmux, and in tmux sessions ccx did not set up, both are still shown.
+  Tested in `tests/test_ccx_statusline.sh`.
+
 ## [1.6.0] - 2026-10-23
 
 ### Added
