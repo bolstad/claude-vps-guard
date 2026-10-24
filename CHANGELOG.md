@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.6.1] - 2026-10-24
+
 ### Fixed
 - `ccx-statusline` no longer repeats the machine name and account inside a ccx tmux session,
   where the tmux status bar already shows both. The machine is left out when tmux's
@@ -272,4 +274,5 @@ First tagged release. Everything below was developed between 2026-07-18 and
 [1.4.0]: https://github.com/bolstad/claude-vps-guard/compare/v1.3.0...v1.4.0
 [1.5.0]: https://github.com/bolstad/claude-vps-guard/compare/v1.4.0...v1.5.0
 [1.6.0]: https://github.com/bolstad/claude-vps-guard/compare/v1.5.0...v1.6.0
-[Unreleased]: https://github.com/bolstad/claude-vps-guard/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/bolstad/claude-vps-guard/compare/v1.6.1...HEAD
+[1.6.1]: https://github.com/bolstad/claude-vps-guard/compare/v1.6.0...v1.6.1
